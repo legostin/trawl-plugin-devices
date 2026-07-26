@@ -201,6 +201,16 @@ export class RunController {
     return merged;
   }
 
+  /** Replay up to a failure and ask the page what it offers now. */
+  async heal(runId: string, deviceId: string): Promise<unknown> {
+    return this.agent.post("/heal", {
+      runId,
+      deviceId,
+      env: envSnapshot(this.host),
+      proxyPort: (await this.host.capture?.status())?.port ?? undefined,
+    });
+  }
+
   report(runId: string): RunReport | undefined {
     return this.reports.get(runId);
   }

@@ -53,5 +53,6 @@ export function makeDevicesApi(agent: AgentClient, runs: RunController): Devices
     snapshot: (sessionId) => agent.post("/control/snapshot", { sessionId }),
     perform: (input) => agent.post("/control/do", input),
     guide: async () => (await agent.get<{ guide: string }>("/guide")).guide,
+    heal: (runId, deviceId) => runs.heal(runId, deviceId),
   };
 }

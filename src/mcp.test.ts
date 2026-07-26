@@ -22,6 +22,7 @@ const api = (over: Partial<DevicesApi> = {}): DevicesApi => ({
   snapshot: async () => ({ nodes: [] }),
   perform: async () => ({ url: "about:blank", title: "", consoleErrors: [] }),
   guide: async () => "# Writing device scripts",
+  heal: async () => ({ step: { index: 2 }, candidates: [] }),
   ...over,
 });
 
@@ -29,7 +30,7 @@ const byName = (name: string) => buildToolSpecs(api()).find((s) => s.name === na
 
 it("exposes exactly the planned tools, unprefixed", () => {
   expect(buildToolSpecs(api()).map((s) => s.name).sort()).toEqual([
-    "do", "guide", "list", "record_start", "record_status", "record_stop",
+    "do", "guide", "heal", "list", "record_start", "record_status", "record_stop",
     "run_cancel", "run_report", "run_start", "run_status", "runs_list",
     "save", "script_read", "script_validate", "script_write", "scripts_list",
     "snapshot", "start", "status", "stop",

@@ -28,6 +28,7 @@ export interface DevicesApi {
   snapshot(sessionId: string): Promise<unknown>;
   perform(input: Record<string, unknown>): Promise<unknown>;
   guide(): Promise<string>;
+  heal(runId: string, deviceId: string): Promise<unknown>;
 }
 
 const DO_ACTIONS = ["click", "fill", "check", "uncheck", "select", "hover", "press", "goto", "screenshot"];
@@ -265,6 +266,18 @@ function specs(api: DevicesApi): McpToolSpec[] {
         if (!input.ref && !input.target && action !== "goto") throw new Error("ref or target is required");
         return api.perform(input);
       },
+    },
+    {
+      name: "heal",
+      description:
+        "Diagnose a failed run: replays the scenario up to the failing step, then reports the target that failed and what the page actually offers now, ranked by similarity. Use it before rewriting a broken step.",
+      inputSchema: {
+        type: "object",
+        properties: { runId: { type: "string" }, deviceId: { type: "string" } },
+        required: ["runId", "deviceId"],
+      },
+      timeoutMs: 120_000,
+      handler: (args) => api.heal(str(args, "runId")!, str(args, "deviceId")!),
     },
     {
       name: "guide",
