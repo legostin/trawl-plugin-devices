@@ -25,6 +25,39 @@ export async function resolveSecrets(host: TrawlHost, names: string[]): Promise<
   return resolved;
 }
 
+const RUN_CALL = /(?:^|[^A-Za-z0-9_$])run\(\s*['"]([^'"]+)['"]/g;
+
+/** Scripts a scenario pulls in via run('…'). */
+export function scanRunTargets(code: string): string[] {
+  const found = new Set<string>();
+  for (const match of code.matchAll(RUN_CALL)) if (match[1]) found.add(match[1]);
+  return [...found];
+}
+
+/**
+ * Secrets used anywhere in a composed scenario. A script that only calls
+ * run('scripts/login.js') names no secrets itself, yet the run needs login's.
+ */
+export async function collectSecretNames(
+  code: string,
+  readScript: (path: string) => Promise<string>,
+): Promise<string[]> {
+  const names = new Set(scanSecrets(code));
+  const seen = new Set<string>();
+  const queue = scanRunTargets(code);
+
+  while (queue.length) {
+    const next = queue.shift()!;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    const child = await readScript(next).catch(() => null);
+    if (child === null) continue; // a missing script fails the run with its own error
+    for (const name of scanSecrets(child)) names.add(name);
+    queue.push(...scanRunTargets(child));
+  }
+  return [...names];
+}
+
 export function envSnapshot(host: TrawlHost): Record<string, string> {
   const project = host.projects.active();
   return Object.fromEntries((project?.env ?? []).map((e) => [e.key, e.value]));

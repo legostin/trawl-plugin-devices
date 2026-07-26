@@ -48,6 +48,7 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
+    const [scriptName, setScriptName] = useState("");
     const [reportWidth, setReportWidth] = useState(45); // percent
     const dragging = useRef(false);
     const tokenRef = useRef<string | null>(null);
@@ -216,8 +217,17 @@ export function makeDevicesPanel(host: TrawlHost) {
     const openScript = (path: string) =>
       guard(async () => {
         setSelectedScript(path);
+        setScriptName(path.replace(/^scripts\//, "").replace(/\.js$/, ""));
         if (path) setCode((await agent.get<{ code: string }>("/scripts/read", { path })).code);
       });
+
+    /** `login` and `scripts/login.js` both mean the same file. */
+    const scriptPath = (name: string): string => {
+      const trimmed = name.trim().replace(/^\/+/, "");
+      if (!trimmed) return "";
+      const withDir = trimmed.startsWith("scripts/") ? trimmed : `scripts/${trimmed}`;
+      return withDir.endsWith(".js") ? withDir : `${withDir}.js`;
+    };
 
     const runScript = () =>
       guard(async () => {
@@ -247,7 +257,7 @@ export function makeDevicesPanel(host: TrawlHost) {
     const stopRecording = () =>
       guard(async () => {
         if (!recordingId) return;
-        const name = selectedScript || `scripts/recorded-${scripts.length + 1}.js`;
+        const name = scriptPath(scriptName) || selectedScript || `scripts/recorded-${scripts.length + 1}.js`;
         const result = await agent.post<{ code: string; scriptPath?: string; warnings: string[] }>(
           `/record/${recordingId}/stop`,
           { saveAs: name },
@@ -261,9 +271,10 @@ export function makeDevicesPanel(host: TrawlHost) {
 
     const saveScript = () =>
       guard(async () => {
-        const path = selectedScript || `scripts/script-${scripts.length + 1}.js`;
+        const path = scriptPath(scriptName) || selectedScript || `scripts/script-${scripts.length + 1}.js`;
         await agent.post("/scripts/write", { path, code });
         setSelectedScript(path);
+        setScriptName(path.replace(/^scripts\//, "").replace(/\.js$/, ""));
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
       });
 
@@ -279,6 +290,7 @@ export function makeDevicesPanel(host: TrawlHost) {
       });
 
     const device = devices.find((d) => d.id === deviceId);
+    const envVars = host.projects.active()?.env ?? [];
 
     /** Both knobs live on the device, so they survive restarts. */
     const patchDevice = (patch: Partial<Device>) =>
@@ -360,6 +372,13 @@ export function makeDevicesPanel(host: TrawlHost) {
               </option>
             ))}
           </Select>
+          <Input
+            value={scriptName}
+            placeholder="name, e.g. login"
+            title="Saved as scripts/<name>.js"
+            onChange={(e) => setScriptName(e.target.value)}
+            style={{ width: 150 }}
+          />
 
           {recordingId ? (
             <Button disabled={busy} onClick={() => void stopRecording()}>
@@ -422,8 +441,49 @@ export function makeDevicesPanel(host: TrawlHost) {
           onMouseUp={() => (dragging.current = false)}
           onMouseLeave={() => (dragging.current = false)}
         >
-          <div className="flex-1 min-w-0">
-            <ScriptEditor value={code} onChange={setCode} language="javascript" />
+          <div className="flex-1 min-w-0 flex flex-col">
+            <div className="flex-1 min-h-0">
+              <ScriptEditor value={code} onChange={setCode} language="javascript" />
+            </div>
+            <div className="border-t border-border px-2 py-1.5 text-xs flex flex-wrap gap-x-3 gap-y-1 items-center">
+              <span className="text-muted-foreground">variables:</span>
+              {envVars.length === 0 ? (
+                <span className="text-muted-foreground">
+                  none — add them to the active project to use {"{{NAME}}"} here
+                </span>
+              ) : (
+                envVars.map((v) => (
+                  <button
+                    key={v.key}
+                    title={`${v.value} — click to copy {{${v.key}}}`}
+                    className="font-mono rounded bg-muted/50 px-1.5 py-0.5 hover:bg-muted"
+                    onClick={() => void navigator.clipboard.writeText(`{{${v.key}}}`)}
+                  >
+                    {`{{${v.key}}}`}
+                  </button>
+                ))
+              )}
+              {scripts.length > 0 && (
+                <>
+                  <span className="text-muted-foreground ml-2">compose:</span>
+                  {scripts
+                    .filter((path) => path !== selectedScript)
+                    .slice(0, 6)
+                    .map((path) => (
+                      <button
+                        key={path}
+                        title={`Append run('${path}')`}
+                        className="font-mono rounded bg-muted/50 px-1.5 py-0.5 hover:bg-muted"
+                        onClick={() =>
+                          setCode((c) => `${c}${c.endsWith("\n") || !c ? "" : "\n"}run('${path}')\n`)
+                        }
+                      >
+                        run({path.replace(/^scripts\//, "").replace(/\.js$/, "")})
+                      </button>
+                    ))}
+                </>
+              )}
+            </div>
           </div>
           <div
             onMouseDown={() => (dragging.current = true)}

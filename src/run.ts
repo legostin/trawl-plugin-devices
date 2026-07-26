@@ -1,7 +1,7 @@
 import type { TrawlHost } from "./trawl";
 import type { AgentClient } from "./agent";
 import { Correlator } from "./correlate";
-import { envSnapshot, resolveSecrets, scanSecrets } from "./secrets";
+import { collectSecretNames, envSnapshot, resolveSecrets } from "./secrets";
 
 export interface StepReport {
   index: number;
@@ -68,9 +68,13 @@ export class RunController {
     private readonly agent: AgentClient,
   ) {}
 
+  /** Reads a script the way the agent sees it — used to follow run('…') calls. */
+  private readScript = async (path: string): Promise<string> =>
+    (await this.agent.get<{ code: string }>("/scripts/read", { path })).code;
+
   /** Subscribe first, then post: markers are only visible in the live stream. */
   async start(input: StartInput): Promise<RunReport> {
-    const secrets = await resolveSecrets(this.host, scanSecrets(input.code));
+    const secrets = await resolveSecrets(this.host, await collectSecretNames(input.code, this.readScript));
     const correlator = new Correlator(this.host);
     correlator.start("");
 
