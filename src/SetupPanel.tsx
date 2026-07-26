@@ -48,8 +48,34 @@ export function SetupPanel({
   const { Button, Input } = host.ui;
   const [showLog, setShowLog] = useState(false);
   const [token, setToken] = useState("");
+  const [copied, setCopied] = useState(false);
   const failed = steps.find((s) => s.status === "failed");
   const started = steps.some((s) => s.status !== "pending");
+
+  const copy = (): void => {
+    void navigator.clipboard.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  /** The command, with a copy icon — useful even when the app can start it
+   *  itself: for a terminal run, a bug report, or CI. */
+  const commandBlock = (
+    <div className="flex items-start gap-2">
+      <pre className="flex-1 overflow-x-auto rounded border border-border bg-muted/30 p-2 text-xs">
+        {command}
+      </pre>
+      <button
+        onClick={copy}
+        title={copied ? "Copied" : "Copy command"}
+        aria-label="Copy command"
+        className="mt-1 shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        {copied ? "✓" : "⧉"}
+      </button>
+    </div>
+  );
 
   return (
     <div className="p-6 max-w-[720px] flex flex-col gap-5">
@@ -95,6 +121,13 @@ export function SetupPanel({
             ))}
           </ol>
 
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              Command Trawl runs
+            </summary>
+            <div className="mt-2">{commandBlock}</div>
+          </details>
+
           {log.length > 0 && (
             <div>
               <button
@@ -116,15 +149,7 @@ export function SetupPanel({
           <p className="text-sm text-muted-foreground">
             This Trawl version cannot start the agent for you. Run it once in a terminal:
           </p>
-          <pre className="overflow-x-auto rounded border border-border bg-muted/30 p-2 text-xs">{command}</pre>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void navigator.clipboard.writeText(command)}
-            style={{ alignSelf: "flex-start" }}
-          >
-            Copy command
-          </Button>
+          {commandBlock}
           {tokenNeeded && (
             <div className="flex gap-2 items-center mt-2">
               <Input

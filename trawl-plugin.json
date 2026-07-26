@@ -1,7 +1,7 @@
 {
   "id": "devices",
   "name": "Devices",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Test-automation devices \u2014 record browser scenarios and replay them with Playwright. One-button setup on Trawl 1.8+.",
   "author": "legostin",
   "entry": "dist/plugin.js",
