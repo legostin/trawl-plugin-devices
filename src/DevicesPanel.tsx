@@ -23,6 +23,8 @@ interface Device {
   id: string;
   name: string;
   headless: boolean;
+  stepDelayMs?: number;
+  closeAfterRun?: boolean;
 }
 
 const MAX_LOG = 400;
@@ -46,6 +48,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
+    const [reportWidth, setReportWidth] = useState(45); // percent
+    const dragging = useRef(false);
     const tokenRef = useRef<string | null>(null);
 
     const agent = useMemo(
@@ -223,6 +227,8 @@ export function makeDevicesPanel(host: TrawlHost) {
           code,
           deviceId,
           proxyPort: live?.port ?? settings.proxyPort,
+          stepDelayMs: device?.stepDelayMs,
+          closeAfterRun: device?.closeAfterRun,
         });
         setReport(started);
         setReport(await runs.waitFor(started.runId));
@@ -270,6 +276,17 @@ export function makeDevicesPanel(host: TrawlHost) {
         setNewDevice(null);
         await loadEverything();
         setDeviceId(id);
+      });
+
+    const device = devices.find((d) => d.id === deviceId);
+
+    /** Both knobs live on the device, so they survive restarts. */
+    const patchDevice = (patch: Partial<Device>) =>
+      guard(async () => {
+        if (!device) return;
+        const next = { ...device, ...patch };
+        setDevices((all) => all.map((d) => (d.id === next.id ? next : d)));
+        await agent.post("/devices", next);
       });
 
     const { Button, Select, ScriptEditor, Input } = host.ui;
@@ -360,6 +377,24 @@ export function makeDevicesPanel(host: TrawlHost) {
             Run
           </Button>
 
+          <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Pause after each step">
+            pause
+            <Input
+              value={String(device?.stepDelayMs ?? 0)}
+              onChange={(e) => void patchDevice({ stepDelayMs: Number(e.target.value) || 0 })}
+              style={{ width: 64 }}
+            />
+            ms
+          </label>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Close the browser when a run ends">
+            <input
+              type="checkbox"
+              checked={device?.closeAfterRun ?? true}
+              onChange={(e) => void patchDevice({ closeAfterRun: e.target.checked })}
+            />
+            close browser
+          </label>
+
           <span className="ml-auto text-xs text-muted-foreground">
             agent {health?.agent} · {health?.workspace}
             {!captureOn && " · capture off: steps will have no traffic"}
@@ -376,11 +411,27 @@ export function makeDevicesPanel(host: TrawlHost) {
 
         {error && <div className="px-2 py-1 text-xs text-destructive border-b border-border">{error}</div>}
 
-        <div className="flex flex-1 min-h-0">
-          <div className="flex-1 min-w-0 border-r border-border">
+        <div
+          className="flex flex-1 min-h-0"
+          onMouseMove={(e) => {
+            if (!dragging.current) return;
+            const box = e.currentTarget.getBoundingClientRect();
+            const pct = ((box.right - e.clientX) / box.width) * 100;
+            setReportWidth(Math.min(80, Math.max(20, pct)));
+          }}
+          onMouseUp={() => (dragging.current = false)}
+          onMouseLeave={() => (dragging.current = false)}
+        >
+          <div className="flex-1 min-w-0">
             <ScriptEditor value={code} onChange={setCode} language="javascript" />
           </div>
-          <div className="w-[45%] min-w-0">
+          <div
+            onMouseDown={() => (dragging.current = true)}
+            onDoubleClick={() => setReportWidth(45)}
+            title="Drag to resize · double-click to reset"
+            className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60"
+          />
+          <div style={{ width: `${reportWidth}%` }} className="min-w-0">
             <RunReportView host={host} report={report} />
           </div>
         </div>

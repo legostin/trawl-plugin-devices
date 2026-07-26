@@ -37,6 +37,8 @@ export interface StartInput {
   /** Trawl's live proxy port, so the run is captured even if the agent was
    *  started with a different default. */
   proxyPort?: number;
+  stepDelayMs?: number;
+  closeAfterRun?: boolean;
 }
 
 /** The compact shape MCP returns by default. */
@@ -79,6 +81,8 @@ export class RunController {
         sessionId: input.sessionId,
         headless: input.headless,
         proxyPort: input.proxyPort,
+        stepDelayMs: input.stepDelayMs,
+        closeAfterRun: input.closeAfterRun,
         env: envSnapshot(this.host),
         secrets,
       });
