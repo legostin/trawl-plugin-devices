@@ -566,7 +566,17 @@ export function makeDevicesPanel(host: TrawlHost) {
               ))}
             </div>
             <div className="flex-1 min-h-0">
-              {pane === "report" && <RunReportView host={host} report={report} />}
+              {pane === "report" && (
+                <RunReportView
+                  host={host}
+                  report={report}
+                  context={{
+                    workspace: health?.workspace ?? settings.workspace,
+                    agentVersion: health?.agent ?? null,
+                    env: Object.fromEntries(envVars.map((v) => [v.key, v.value])),
+                  }}
+                />
+              )}
               {pane === "suite" && (
                 <SuiteView
                   host={host}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { TrawlHost } from "./trawl";
 import type { RunReport, StepReport } from "./run";
+import { bugReport } from "./bugReport";
 
 const statusColour = (status: StepReport["status"]): string =>
   status === "passed" ? "text-green-500" : status === "failed" ? "text-destructive" : "text-muted-foreground";
@@ -34,9 +35,25 @@ function StepError({ error }: { error: NonNullable<StepReport["error"]> }) {
 }
 
 /** Steps with their HTTP flows; clicking a flow filters the Traffic view to it. */
-export function RunReportView({ host, report }: { host: TrawlHost; report: RunReport | null }) {
-  const { StatusBadge, MethodBadge } = host.ui;
+export function RunReportView({
+  host,
+  report,
+  context,
+}: {
+  host: TrawlHost;
+  report: RunReport | null;
+  context?: { workspace?: string | null; agentVersion?: string | null; env?: Record<string, string> };
+}) {
+  const { StatusBadge, MethodBadge, Button } = host.ui;
+  const [copied, setCopied] = useState(false);
   if (!report) return <div className="p-3 text-muted-foreground text-sm">No run yet.</div>;
+
+  const copyBugReport = (): void => {
+    void navigator.clipboard.writeText(bugReport(report, context ?? {})).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   return (
     <div className="p-3 flex flex-col gap-2 overflow-auto h-full">
@@ -45,6 +62,15 @@ export function RunReportView({ host, report }: { host: TrawlHost; report: RunRe
         <span className="text-muted-foreground text-xs">
           {report.durationMs} ms · {report.steps.length} steps
         </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto"
+          title="Steps, error, network and where the evidence sits — as markdown"
+          onClick={copyBugReport}
+        >
+          {copied ? "✓ copied" : "Copy bug report"}
+        </Button>
       </div>
 
       {report.warnings.map((warning) => (
