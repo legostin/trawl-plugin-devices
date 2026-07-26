@@ -1,6 +1,6 @@
 /** The setup flow, kept free of React so it can be tested on its own. */
 
-export type StepId = "agent" | "browser" | "token" | "device";
+export type StepId = "capture" | "agent" | "browser" | "token" | "device" | "record";
 export type StepStatus = "pending" | "running" | "done" | "failed";
 
 export interface Step {
@@ -11,10 +11,12 @@ export interface Step {
 }
 
 export const INITIAL_STEPS: Step[] = [
+  { id: "capture", label: "Start capturing traffic", status: "pending" },
   { id: "agent", label: "Start the agent", status: "pending" },
   { id: "browser", label: "Install the browser", status: "pending" },
   { id: "token", label: "Connect to the agent", status: "pending" },
   { id: "device", label: "Create a device", status: "pending" },
+  { id: "record", label: "Open the browser and record", status: "pending" },
 ];
 
 export const setStep = (steps: Step[], id: StepId, status: StepStatus, detail?: string): Step[] =>
@@ -58,6 +60,8 @@ export function stepDetail(line: string): string | null {
 export interface AgentArgs {
   workspace?: string;
   port: number;
+  /** Trawl's live proxy port — the browser is pointed at it. */
+  proxyPort?: number;
 }
 
 /** The command the plugin runs — also what the consent dialog shows. */
@@ -69,6 +73,7 @@ export function agentCommand(args: AgentArgs): { command: string; args: string[]
       "trawl-devices-agent@latest",
       ...(args.workspace ? [`--workspace=${args.workspace}`] : []),
       `--port=${args.port}`,
+      ...(args.proxyPort ? [`--proxy-port=${args.proxyPort}`] : []),
       "--ensure-browser",
     ],
   };

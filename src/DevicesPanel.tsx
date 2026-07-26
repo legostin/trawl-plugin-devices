@@ -106,12 +106,30 @@ export function makeDevicesPanel(host: TrawlHost) {
     const startSetup = () =>
       guard(async () => {
         if (!host.process) throw new Error("this Trawl version cannot start the agent");
-        setSteps(setStep(INITIAL_STEPS, "agent", "running"));
         setLog([]);
 
+        // Capture first: the browser is pointed at Trawl's proxy, and the agent
+        // is told that port at startup.
+        setSteps(setStep(INITIAL_STEPS, "capture", "running"));
+        const capture = (await host.capture?.start()) ?? { running: false, port: null };
+        const proxyPort = capture.port ?? settings.proxyPort;
+        setSteps((s) =>
+          setStep(
+            s,
+            "capture",
+            capture.running ? "done" : "failed",
+            capture.running ? `proxy on ${proxyPort}` : "the proxy did not start",
+          ),
+        );
+        if (capture.port && capture.port !== settings.proxyPort) {
+          void saveSettings(host, { proxyPort: capture.port }).then(setSettings);
+        }
+
+        setSteps((s) => setStep(s, "agent", "running"));
         const { command, args } = agentCommand({
           workspace: settings.workspace || undefined,
           port: settings.agentPort,
+          proxyPort,
         });
         const proc = await host.process.spawn({ command, args });
 
@@ -158,11 +176,19 @@ export function makeDevicesPanel(host: TrawlHost) {
 
           setSteps((s) => setStep(s, "device", "running"));
           const listed = await probe.get<{ devices: Device[] }>("/devices");
-          if (listed.devices.length === 0) await probe.post("/devices", DEFAULT_DEVICE);
-          setSteps((s) => setStep(s, "device", "done"));
+          const device = listed.devices[0] ?? (await probe.post<{ device: Device }>("/devices", DEFAULT_DEVICE)).device;
+          setSteps((s) => setStep(s, "device", "done", device.name));
 
           setTokenState(tokenRef.current);
           await loadEverything();
+          setDeviceId(device.id);
+
+          // Straight into recording: a headed browser opens through the proxy
+          // with the recorder overlay, so the next click is already captured.
+          setSteps((s) => setStep(s, "record", "running"));
+          const rec = await probe.post<{ id: string }>("/record/start", { deviceId: device.id });
+          setRecordingId(rec.id);
+          setSteps((s) => setStep(s, "record", "done", "browser open — click away, then Stop recording"));
         } catch (err) {
           setSteps((s) => setStep(s, "token", "failed", (err as Error).message));
           throw err;
@@ -324,6 +350,14 @@ export function makeDevicesPanel(host: TrawlHost) {
             {!captureOn && " · capture off: steps will have no traffic"}
           </span>
         </div>
+
+        {recordingId && (
+          <div className="px-2 py-1.5 text-xs border-b border-border bg-primary/10 flex items-center gap-2">
+            <span className="text-primary">●</span>
+            Recording — do things in the browser window, then press “Stop recording”. Every click lands in the
+            script on the left.
+          </div>
+        )}
 
         {error && <div className="px-2 py-1 text-xs text-destructive border-b border-border">{error}</div>}
 

@@ -64,6 +64,18 @@ export interface ProcessInfo {
   startedAt: number;
 }
 
+export interface CaptureStatus {
+  running: boolean;
+  port: number | null;
+}
+
+export interface TrawlCapture {
+  status(): CaptureStatus;
+  start(): Promise<CaptureStatus>;
+  stop(): Promise<void>;
+  onChange(cb: (status: CaptureStatus) => void): () => void;
+}
+
 export interface TrawlDialog {
   pickFolder(options?: { title?: string; defaultPath?: string }): Promise<string | null>;
   pickFile(options?: {
@@ -91,6 +103,7 @@ export interface TrawlHost {
   react: typeof React;
   mcp?: TrawlMcp;
   /** Host API 1.8.0 and newer — always feature-detect. */
+  capture?: TrawlCapture;
   dialog?: TrawlDialog;
   process?: TrawlProcess;
   events: {

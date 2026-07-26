@@ -50,12 +50,13 @@ it("builds the agent command, omitting an unset workspace", () => {
     args: ["-y", "trawl-devices-agent@latest", "--port=8787", "--ensure-browser"],
   });
   expect(agentCommand({ port: 9000, workspace: "/repo" }).args).toContain("--workspace=/repo");
+  expect(agentCommand({ port: 9000, proxyPort: 8729 }).args).toContain("--proxy-port=8729");
 });
 
 it("updates one step without touching the others", () => {
   const next = setStep(INITIAL_STEPS, "agent", "running");
   expect(next.find((s) => s.id === "agent")!.status).toBe("running");
-  expect(next.filter((s) => s.status === "pending")).toHaveLength(3);
+  expect(next.filter((s) => s.status === "pending")).toHaveLength(INITIAL_STEPS.length - 1);
 
   const failed = setStep(next, "agent", "failed", "npx not found");
   expect(failed.find((s) => s.id === "agent")).toMatchObject({ status: "failed", detail: "npx not found" });

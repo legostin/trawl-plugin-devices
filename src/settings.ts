@@ -9,7 +9,8 @@ export interface Settings {
   proxyPort: number;
 }
 
-export const DEFAULT_SETTINGS: Settings = { workspace: "", agentPort: 8787, proxyPort: 8080 };
+// 8729 is where Trawl's proxy listens; the live port overrides this at setup.
+export const DEFAULT_SETTINGS: Settings = { workspace: "", agentPort: 8787, proxyPort: 8729 };
 
 const KEY = "settings";
 export const TOKEN_SECRET_NAME = "TRAWL_DEVICES_AGENT_TOKEN";
