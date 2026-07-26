@@ -121,6 +121,20 @@ export interface TrawlProcess {
   list(): Promise<ProcessInfo[]>;
 }
 
+export interface RuleDraft {
+  name: string;
+  pattern: string;
+  phase: "request" | "response" | "both" | "handler";
+  script: string;
+}
+
+export interface TrawlRules {
+  create(draft: RuleDraft, options?: { open?: boolean }): Promise<string>;
+  /** Host API 1.10.0 and newer. */
+  remove?(id: string): Promise<void>;
+  list?(): Promise<unknown[]>;
+}
+
 export interface TrawlHost {
   version: string;
   react: typeof React;
@@ -136,6 +150,7 @@ export interface TrawlHost {
     describe(type: string, meta: EventMeta): void;
   };
   flows: { subscribe(cb: (flow: unknown) => void): () => void };
+  rules: TrawlRules;
   http: { send(req: SendRequest, viaProxy?: boolean): Promise<SendResponse> };
   projects: {
     active(): { id: string; name: string; env: { key: string; value: string }[] } | null;

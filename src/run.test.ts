@@ -20,10 +20,13 @@ const report = (over: Partial<RunReport> = {}): RunReport => ({
 
 const harness = () => {
   const calls: { path: string; body?: unknown }[] = [];
+  const createdRules: { name: string; script: string }[] = [];
+  const removedRules: string[] = [];
   const events: { type: string; payload: unknown }[] = [];
   const order: string[] = [];
   let subscribed = false;
   let postResult: RunReport = report({ status: "running" });
+  let validateSteps: unknown[] = [];
   let getResult: RunReport = report();
 
   const host = {
@@ -44,6 +47,13 @@ const harness = () => {
       onChange: () => () => {},
     },
     secrets: { get: async (n: string) => (n === "PWD" ? "hunter2" : null), list: async () => ["PWD"], set: async () => {} },
+    rules: {
+      create: async (draft: unknown) => {
+        createdRules.push(draft as { name: string; script: string });
+        return `rule_${createdRules.length}`;
+      },
+      remove: async (id: string) => { removedRules.push(id); },
+    },
     log: () => {},
   } as unknown as TrawlHost;
 
@@ -51,6 +61,7 @@ const harness = () => {
     post: async (path: string, body: unknown) => {
       calls.push({ path, body });
       order.push(path);
+      if (path === "/scripts/validate") return { steps: validateSteps };
       return postResult;
     },
     get: async (path: string) => {
@@ -68,6 +79,9 @@ const harness = () => {
     calls,
     events,
     order,
+    createdRules,
+    removedRules,
+    setValidateSteps: (steps: unknown[]) => { validateSteps = steps; },
     isSubscribed: () => subscribed,
     setGetResult: (r: RunReport) => { getResult = r; },
   };
@@ -76,7 +90,10 @@ const harness = () => {
 it("subscribes for correlation before posting the run", async () => {
   const h = harness();
   await h.controller.start({ path: "scripts/a.js", code: "goto('/')", deviceId: "d1" });
-  expect(h.order).toEqual(["subscribe", "/runs"]);
+  // Marker headers only exist in the live stream, so the order matters more
+  // than the exact set of calls (mock collection adds one).
+  expect(h.order[0]).toBe("subscribe");
+  expect(h.order.indexOf("subscribe")).toBeLessThan(h.order.indexOf("/runs"));
 });
 
 it("sends the project env and only the scanned secrets", async () => {
@@ -158,4 +175,34 @@ it("summarise keeps the verdict and the failing step only", () => {
     failedStep: { index: 1, action: "expectText", error: { kind: "assertion" }, screenshot: "step-01.png" },
   });
   expect(summary).not.toHaveProperty("steps");
+});
+
+it("creates a Trawl rule per mock, scoped to this run, and removes it when the run ends", async () => {
+  const h = harness();
+  h.setValidateSteps([
+    { index: 0, action: "goto", args: ["/"] },
+    { index: 1, action: "mock", args: ["GET api/orders", { status: 500 }] },
+  ]);
+
+  const started = await h.controller.start({
+    path: "scripts/a.js",
+    code: "goto('/')\nmock('GET api/orders', { status: 500 })",
+    deviceId: "d1",
+  });
+
+  expect(h.createdRules).toHaveLength(1);
+  expect(h.createdRules[0]!.name).toContain("mock GET api/orders");
+  const tag = /x-trawl-tag'\) !== "([^"]+)"/.exec(h.createdRules[0]!.script)![1];
+  // The very tag the run is told to stamp on its traffic.
+  expect((h.calls.find((c) => c.path === "/runs")!.body as Record<string, unknown>).runTag).toBe(tag);
+
+  await h.controller.poll(started.runId);
+  expect(h.removedRules).toEqual(["rule_1"]);
+});
+
+it("creates nothing when the scenario has no mocks", async () => {
+  const h = harness();
+  h.setValidateSteps([{ index: 0, action: "goto", args: ["/"] }]);
+  await h.controller.start({ path: "scripts/a.js", code: "goto('/')", deviceId: "d1" });
+  expect(h.createdRules).toEqual([]);
 });
