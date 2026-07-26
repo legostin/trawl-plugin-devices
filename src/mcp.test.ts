@@ -23,6 +23,11 @@ const api = (over: Partial<DevicesApi> = {}): DevicesApi => ({
   perform: async () => ({ url: "about:blank", title: "", consoleErrors: [] }),
   guide: async () => "# Writing device scripts",
   heal: async () => ({ step: { index: 2 }, candidates: [] }),
+  suitesList: async () => ({ suites: ["suites/regression.json"] }),
+  suiteRead: async () => ({ name: "regression", scripts: ["scripts/a.js"] }),
+  suiteWrite: async (path) => ({ path, scripts: 1 }),
+  suiteRun: async () => ({ suiteId: "s_1" }),
+  suiteStatus: async () => ({ status: "running", results: [] }),
   ...over,
 });
 
@@ -34,6 +39,7 @@ it("exposes exactly the planned tools, unprefixed", () => {
     "run_cancel", "run_report", "run_start", "run_status", "runs_list",
     "save", "script_read", "script_validate", "script_write", "scripts_list",
     "snapshot", "start", "status", "stop",
+    "suite_read", "suite_run", "suite_status", "suite_write", "suites_list",
   ]);
 });
 
@@ -90,6 +96,19 @@ it("do requires a ref or a target for element actions", async () => {
   await expect(byName("do").handler({ sessionId: "s1", action: "goto", value: "https://x" })).resolves.toMatchObject({
     url: "about:blank",
   });
+});
+
+it("suite_run refuses without a suite or a script list", async () => {
+  await expect(byName("suite_run").handler({ deviceId: "d1" })).rejects.toThrow(/path or scripts is required/);
+  await expect(byName("suite_run").handler({ deviceId: "d1", scripts: ["scripts/a.js"] })).resolves.toEqual({
+    suiteId: "s_1",
+  });
+});
+
+it("suite_write insists on at least one scenario", async () => {
+  await expect(
+    byName("suite_write").handler({ path: "suites/x.json", name: "x", scripts: [] }),
+  ).rejects.toThrow(/non-empty array/);
 });
 
 it("gives live control a shorter timeout", () => {

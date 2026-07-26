@@ -54,5 +54,13 @@ export function makeDevicesApi(agent: AgentClient, runs: RunController): Devices
     perform: (input) => agent.post("/control/do", input),
     guide: async () => (await agent.get<{ guide: string }>("/guide")).guide,
     heal: (runId, deviceId) => runs.heal(runId, deviceId),
+    suitesList: () => agent.get("/suites"),
+    suiteRead: (path) => agent.get("/suites/read", { path }),
+    suiteWrite: (path, suite) => agent.post("/suites/write", { path, suite }),
+    suiteRun: async (input) => {
+      const scripts = input.scripts ?? (await agent.get<{ scripts: string[] }>("/suites/read", { path: input.path })).scripts;
+      return runs.startSuite({ ...input, scripts });
+    },
+    suiteStatus: (suiteId) => runs.pollSuite(suiteId),
   };
 }

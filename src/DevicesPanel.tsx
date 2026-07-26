@@ -7,6 +7,7 @@ import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
+import { SuiteView, type SuiteReport } from "./SuiteView";
 import { SetupPanel } from "./SetupPanel";
 import {
   INITIAL_STEPS,
@@ -52,7 +53,10 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
     const [scriptName, setScriptName] = useState("");
-    const [pane, setPane] = useState<"report" | "history" | "guide">("report");
+    const [pane, setPane] = useState<"report" | "suite" | "history" | "guide">("report");
+    const [suites, setSuites] = useState<string[]>([]);
+    const [selectedSuite, setSelectedSuite] = useState("");
+    const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
     const editorRef = useRef<ScriptEditorApi | null>(null);
     const [reportWidth, setReportWidth] = useState(45); // percent
     const dragging = useRef(false);
@@ -73,6 +77,8 @@ export function makeDevicesPanel(host: TrawlHost) {
         setDevices(listed.devices);
         setDeviceId((current) => current || listed.devices[0]?.id || "");
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
+        // Older agents have no suites endpoint; an empty list simply hides the UI.
+        setSuites((await agent.get<{ suites: string[] }>("/suites").catch(() => ({ suites: [] }))).suites);
       }
       return fresh;
     }, [agent]);
@@ -300,6 +306,26 @@ export function makeDevicesPanel(host: TrawlHost) {
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
       });
 
+    /** Run a whole suite, polling until it settles. */
+    const runSuite = () =>
+      guard(async () => {
+        if (!selectedSuite) return;
+        const file = await agent.get<{ scripts: string[] }>("/suites/read", { path: selectedSuite });
+        const started = await runs.startSuite({
+          path: selectedSuite,
+          scripts: file.scripts,
+          deviceId,
+          stepDelayMs: device?.stepDelayMs,
+        });
+        setPane("suite");
+        for (;;) {
+          const current = (await runs.pollSuite(started.suiteId)) as unknown as SuiteReport;
+          setSuiteReport(current);
+          if (current.status !== "running") break;
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      });
+
     const addDevice = () =>
       guard(async () => {
         const name = (newDevice ?? "").trim();
@@ -418,6 +444,22 @@ export function makeDevicesPanel(host: TrawlHost) {
             Run
           </Button>
 
+          {suites.length > 0 && (
+            <>
+              <Select value={selectedSuite} onChange={(e) => setSelectedSuite(e.target.value)}>
+                <option value="">— suite —</option>
+                {suites.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace(/^suites\//, "").replace(/\.json$/, "")}
+                  </option>
+                ))}
+              </Select>
+              <Button disabled={busy || !deviceId || !selectedSuite} onClick={() => void runSuite()}>
+                Run suite
+              </Button>
+            </>
+          )}
+
           <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Pause after each step">
             pause
             <Input
@@ -513,7 +555,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           />
           <div style={{ width: `${reportWidth}%` }} className="min-w-0 flex flex-col">
             <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
-              {(["report", "history", "guide"] as const).map((tab) => (
+              {(["report", "suite", "history", "guide"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setPane(tab)}
@@ -525,6 +567,18 @@ export function makeDevicesPanel(host: TrawlHost) {
             </div>
             <div className="flex-1 min-h-0">
               {pane === "report" && <RunReportView host={host} report={report} />}
+              {pane === "suite" && (
+                <SuiteView
+                  host={host}
+                  report={suiteReport}
+                  onOpenRun={(runId) =>
+                    void guard(async () => {
+                      setReport(await runs.poll(runId));
+                      setPane("report");
+                    })
+                  }
+                />
+              )}
               {pane === "history" && (
                 <HistoryView
                   host={host}

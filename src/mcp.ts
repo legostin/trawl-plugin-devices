@@ -29,6 +29,11 @@ export interface DevicesApi {
   perform(input: Record<string, unknown>): Promise<unknown>;
   guide(): Promise<string>;
   heal(runId: string, deviceId: string): Promise<unknown>;
+  suitesList(): Promise<unknown>;
+  suiteRead(path: string): Promise<unknown>;
+  suiteWrite(path: string, suite: Record<string, unknown>): Promise<unknown>;
+  suiteRun(input: { path?: string; scripts?: string[]; deviceId: string; retries?: number }): Promise<unknown>;
+  suiteStatus(suiteId: string): Promise<unknown>;
 }
 
 const DO_ACTIONS = ["click", "fill", "check", "uncheck", "select", "hover", "press", "goto", "screenshot"];
@@ -266,6 +271,70 @@ function specs(api: DevicesApi): McpToolSpec[] {
         if (!input.ref && !input.target && action !== "goto") throw new Error("ref or target is required");
         return api.perform(input);
       },
+    },
+    {
+      name: "suites_list",
+      description: "List scenario suites in the workspace.",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => api.suitesList(),
+    },
+    {
+      name: "suite_read",
+      description: "Read a suite: its name, the scenarios it runs and how many retries it allows.",
+      inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      handler: (args) => api.suiteRead(str(args, "path")!),
+    },
+    {
+      name: "suite_write",
+      description: "Create or update a suite — a named list of scenarios with an optional retry count.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          name: { type: "string" },
+          scripts: { type: "array", items: { type: "string" } },
+          retries: { type: "integer" },
+        },
+        required: ["path", "name", "scripts"],
+      },
+      handler: (args) => {
+        const input = obj(args);
+        if (!Array.isArray(input.scripts) || input.scripts.length === 0) {
+          throw new Error("scripts must be a non-empty array");
+        }
+        return api.suiteWrite(str(args, "path")!, {
+          name: str(args, "name")!,
+          scripts: input.scripts,
+          ...(input.retries === undefined ? {} : { retries: Number(input.retries) }),
+        });
+      },
+    },
+    {
+      name: "suite_run",
+      description:
+        "Run a suite: every scenario in its own browser, failures do not stop the rest, and a scenario that only passes on a retry is reported flaky. Returns a suiteId to poll with devices_suite_status.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          scripts: { type: "array", items: { type: "string" } },
+          deviceId: { type: "string" },
+          retries: { type: "integer" },
+        },
+        required: ["deviceId"],
+      },
+      handler: (args) => {
+        const input = obj(args);
+        if (!input.path && !Array.isArray(input.scripts)) throw new Error("path or scripts is required");
+        str(args, "deviceId");
+        return api.suiteRun(input as { deviceId: string });
+      },
+    },
+    {
+      name: "suite_status",
+      description: "Progress and per-scenario results of a suite run.",
+      inputSchema: { type: "object", properties: { suiteId: { type: "string" } }, required: ["suiteId"] },
+      handler: (args) => api.suiteStatus(str(args, "suiteId")!),
     },
     {
       name: "heal",

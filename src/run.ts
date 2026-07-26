@@ -79,6 +79,8 @@ export class RunController {
   private readonly mockRules = new Map<string, string[]>();
   /** What those mocks were meant to do — checked against what actually happened. */
   private readonly mockPlans = new Map<string, MockPlan[]>();
+  /** Mock rules held for a whole suite run. */
+  private readonly suiteRules = new Map<string, string[]>();
 
   constructor(
     private readonly host: TrawlHost,
@@ -94,7 +96,7 @@ export class RunController {
    * request — hence a tag chosen here rather than the runId the agent invents.
    */
   private async installMocks(
-    input: StartInput,
+    input: { code: string; deviceId: string },
     tag: string,
   ): Promise<{ ids: string[]; plans: MockPlan[]; warning: string | null }> {
     if (!this.host.rules.remove) return { ids: [], plans: [], warning: null }; // host older than 1.10.0
@@ -199,6 +201,61 @@ export class RunController {
       }
     }
     return merged;
+  }
+
+  /**
+   * Start a suite. Mocks are per scenario, so each gets its own tag and its own
+   * rules — otherwise one scenario's mock would answer another's requests.
+   */
+  async startSuite(input: {
+    path?: string;
+    scripts: string[];
+    deviceId: string;
+    retries?: number;
+    stepDelayMs?: number;
+  }): Promise<{ suiteId: string }> {
+    const scenarios: { path: string; tag?: string }[] = [];
+    const ruleIds: string[] = [];
+    const secrets: Record<string, string> = {};
+
+    for (const script of input.scripts) {
+      const code = await this.readScript(script).catch(() => "");
+      Object.assign(secrets, await resolveSecrets(this.host, await collectSecretNames(code, this.readScript)));
+
+      const tag = `tag_${Math.random().toString(36).slice(2, 10)}`;
+      const mocks = await this.installMocks({ code, deviceId: input.deviceId }, tag);
+      ruleIds.push(...mocks.ids);
+      scenarios.push(mocks.ids.length ? { path: script, tag } : { path: script });
+    }
+
+    try {
+      const live = await this.host.capture?.start();
+      const started = await this.agent.post<{ suiteId: string }>("/suites/run", {
+        path: input.path,
+        scenarios,
+        deviceId: input.deviceId,
+        retries: input.retries ?? 0,
+        stepDelayMs: input.stepDelayMs,
+        env: envSnapshot(this.host),
+        secrets,
+        proxyPort: live?.port,
+      });
+      this.suiteRules.set(started.suiteId, ruleIds);
+      return started;
+    } catch (err) {
+      for (const id of ruleIds) await this.host.rules.remove?.(id).catch(() => {});
+      throw err;
+    }
+  }
+
+  /** Poll a suite; its mock rules are dropped once it stops running. */
+  async pollSuite(suiteId: string): Promise<{ status: string; results: unknown[] }> {
+    const report = await this.agent.get<{ status: string; results: unknown[] }>(`/suites/runs/${suiteId}`);
+    if (report.status !== "running") {
+      for (const id of this.suiteRules.get(suiteId) ?? []) await this.host.rules.remove?.(id).catch(() => {});
+      this.suiteRules.delete(suiteId);
+    }
+    return report;
   }
 
   /** Replay up to a failure and ask the page what it offers now. */
