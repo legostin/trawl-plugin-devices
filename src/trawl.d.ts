@@ -76,6 +76,29 @@ export interface TrawlCapture {
   onChange(cb: (status: CaptureStatus) => void): () => void;
 }
 
+export interface ScriptEditorApi {
+  insert(text: string): void;
+  replaceAll(text: string): void;
+  getSelectionText(): string;
+  getValue(): string;
+}
+
+export interface CompletionItem {
+  label: string;
+  insert?: string;
+  detail?: string;
+  documentation?: string;
+  kind?: "function" | "variable" | "file" | "snippet" | "keyword";
+}
+
+export interface TrawlEditor {
+  registerCompletions(spec: {
+    language?: string;
+    triggerCharacters?: string[];
+    provide(context: { linePrefix: string; text: string }): CompletionItem[];
+  }): () => void;
+}
+
 export interface TrawlDialog {
   pickFolder(options?: { title?: string; defaultPath?: string }): Promise<string | null>;
   pickFile(options?: {
@@ -104,6 +127,7 @@ export interface TrawlHost {
   mcp?: TrawlMcp;
   /** Host API 1.8.0 and newer — always feature-detect. */
   capture?: TrawlCapture;
+  editor?: TrawlEditor;
   dialog?: TrawlDialog;
   process?: TrawlProcess;
   events: {
@@ -124,7 +148,12 @@ export interface TrawlHost {
   };
   storage: { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void> };
   ui: {
-    ScriptEditor: React.ComponentType<{ value: string; onChange: (v: string) => void; language?: string }>;
+    ScriptEditor: React.ComponentType<{
+      value: string;
+      onChange: (v: string) => void;
+      language?: string;
+      apiRef?: React.MutableRefObject<ScriptEditorApi | null>;
+    }>;
     Button: React.ComponentType<
       React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string }
     >;

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { TrawlHost } from "./trawl";
+import type { ScriptEditorApi, TrawlHost } from "./trawl";
 import { AgentClient, type Health } from "./agent";
 import { RunController, type RunReport } from "./run";
 import { loadSettings, loadToken, saveSettings, saveToken, DEFAULT_SETTINGS, type Settings } from "./settings";
 import { RunReportView } from "./RunReportView";
+import { GuideView } from "./GuideView";
+import { HistoryView } from "./HistoryView";
+import { completionsFor } from "./completions";
 import { SetupPanel } from "./SetupPanel";
 import {
   INITIAL_STEPS,
@@ -49,6 +52,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
     const [scriptName, setScriptName] = useState("");
+    const [pane, setPane] = useState<"report" | "history" | "guide">("report");
+    const editorRef = useRef<ScriptEditorApi | null>(null);
     const [reportWidth, setReportWidth] = useState(45); // percent
     const dragging = useRef(false);
     const tokenRef = useRef<string | null>(null);
@@ -86,6 +91,23 @@ export function makeDevicesPanel(host: TrawlHost) {
         offStop();
       };
     }, []);
+
+    // The editor learns this plugin's language: steps from the agent (never a
+    // hard-coded copy), script paths for run('…'), project variables for {{…}}.
+    useEffect(() => {
+      if (!host.editor) return;
+      const off = host.editor.registerCompletions({
+        language: "javascript",
+        triggerCharacters: ["'", '"', "{", "("],
+        provide: ({ linePrefix }) =>
+          completionsFor(linePrefix, {
+            steps: health?.steps ?? [],
+            scripts,
+            variables: (host.projects.active()?.env ?? []).map((v) => v.key),
+          }),
+      });
+      return off;
+    }, [health?.steps, scripts]);
 
     // An agent may already be running from a previous session.
     useEffect(() => {
@@ -443,7 +465,7 @@ export function makeDevicesPanel(host: TrawlHost) {
         >
           <div className="flex-1 min-w-0 flex flex-col">
             <div className="flex-1 min-h-0">
-              <ScriptEditor value={code} onChange={setCode} language="javascript" />
+              <ScriptEditor value={code} onChange={setCode} language="javascript" apiRef={editorRef} />
             </div>
             <div className="border-t border-border px-2 py-1.5 text-xs flex flex-wrap gap-x-3 gap-y-1 items-center">
               <span className="text-muted-foreground">variables:</span>
@@ -455,9 +477,9 @@ export function makeDevicesPanel(host: TrawlHost) {
                 envVars.map((v) => (
                   <button
                     key={v.key}
-                    title={`${v.value} — click to copy {{${v.key}}}`}
+                    title={`${v.value} — click to insert {{${v.key}}}`}
                     className="font-mono rounded bg-muted/50 px-1.5 py-0.5 hover:bg-muted"
-                    onClick={() => void navigator.clipboard.writeText(`{{${v.key}}}`)}
+                    onClick={() => editorRef.current?.insert(`{{${v.key}}}`)}
                   >
                     {`{{${v.key}}}`}
                   </button>
@@ -474,9 +496,7 @@ export function makeDevicesPanel(host: TrawlHost) {
                         key={path}
                         title={`Append run('${path}')`}
                         className="font-mono rounded bg-muted/50 px-1.5 py-0.5 hover:bg-muted"
-                        onClick={() =>
-                          setCode((c) => `${c}${c.endsWith("\n") || !c ? "" : "\n"}run('${path}')\n`)
-                        }
+                        onClick={() => editorRef.current?.insert(`run('${path}')\n`)}
                       >
                         run({path.replace(/^scripts\//, "").replace(/\.js$/, "")})
                       </button>
@@ -491,8 +511,33 @@ export function makeDevicesPanel(host: TrawlHost) {
             title="Drag to resize · double-click to reset"
             className="w-1 shrink-0 cursor-col-resize bg-border hover:bg-primary/60"
           />
-          <div style={{ width: `${reportWidth}%` }} className="min-w-0">
-            <RunReportView host={host} report={report} />
+          <div style={{ width: `${reportWidth}%` }} className="min-w-0 flex flex-col">
+            <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
+              {(["report", "history", "guide"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setPane(tab)}
+                  className={`rounded px-2 py-0.5 ${pane === tab ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 min-h-0">
+              {pane === "report" && <RunReportView host={host} report={report} />}
+              {pane === "history" && (
+                <HistoryView
+                  host={host}
+                  agent={agent}
+                  script={selectedScript}
+                  onOpen={(past) => {
+                    setReport(past);
+                    setPane("report");
+                  }}
+                />
+              )}
+              {pane === "guide" && <GuideView host={host} agent={agent} />}
+            </div>
           </div>
         </div>
       </div>

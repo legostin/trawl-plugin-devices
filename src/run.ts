@@ -24,7 +24,12 @@ export interface RunReport {
   startedAt: number;
   durationMs: number;
   steps: StepReport[];
-  artifacts: { trace: string | null; video: string | null };
+  artifacts: {
+    trace: string | null;
+    video: string | null;
+    /** JPEG frames captured during the run, plus how to play them back. */
+    frames?: { dir: string; count: number; fps: number };
+  };
   warnings: string[];
 }
 
