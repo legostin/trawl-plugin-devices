@@ -1,0 +1,71 @@
+/** The setup flow, kept free of React so it can be tested on its own. */
+
+export type StepId = "agent" | "browser" | "token" | "device";
+export type StepStatus = "pending" | "running" | "done" | "failed";
+
+export interface Step {
+  id: StepId;
+  label: string;
+  status: StepStatus;
+  detail?: string;
+}
+
+export const INITIAL_STEPS: Step[] = [
+  { id: "agent", label: "Start the agent", status: "pending" },
+  { id: "browser", label: "Install the browser", status: "pending" },
+  { id: "token", label: "Connect to the agent", status: "pending" },
+  { id: "device", label: "Create a device", status: "pending" },
+];
+
+export const setStep = (steps: Step[], id: StepId, status: StepStatus, detail?: string): Step[] =>
+  steps.map((s) => (s.id === id ? { ...s, status, ...(detail === undefined ? {} : { detail }) } : s));
+
+/** The agent prints `token: <value>` once on startup. */
+export function extractToken(line: string): string | null {
+  const hit = /^token:\s*(\S+)\s*$/.exec(line.trim());
+  return hit ? hit[1]! : null;
+}
+
+/** `trawl-devices-agent 0.1.0 listening on http://127.0.0.1:8791` */
+export function extractPort(line: string): number | null {
+  const hit = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(line);
+  return hit ? Number(hit[1]) : null;
+}
+
+/** `workspace: /Users/me/trawl-devices` */
+export function extractWorkspace(line: string): string | null {
+  const hit = /^workspace:\s*(.+?)\s*$/.exec(line.trim());
+  return hit ? hit[1]! : null;
+}
+
+/** Progress lines the agent prints while Playwright downloads a browser. */
+export const isBrowserLine = (line: string): boolean => line.startsWith("[browser]");
+export const isBrowserReady = (line: string): boolean => /\[browser\].*(ready|skipping)/.test(line);
+
+export interface AgentArgs {
+  workspace?: string;
+  port: number;
+}
+
+/** The command the plugin runs — also what the consent dialog shows. */
+export function agentCommand(args: AgentArgs): { command: string; args: string[] } {
+  return {
+    command: "npx",
+    args: [
+      "-y",
+      "trawl-devices-agent@latest",
+      ...(args.workspace ? [`--workspace=${args.workspace}`] : []),
+      `--port=${args.port}`,
+      "--ensure-browser",
+    ],
+  };
+}
+
+/** The device created when the registry is empty, so Record works immediately. */
+export const DEFAULT_DEVICE = {
+  id: "chrome-desktop",
+  name: "Chrome desktop",
+  browser: "chromium",
+  headless: false,
+  proxy: { mode: "trawl" },
+};

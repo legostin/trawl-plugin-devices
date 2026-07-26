@@ -56,10 +56,43 @@ export interface EventMeta {
   params?: { name: string; type: string; doc?: string }[];
 }
 
+export interface ProcessInfo {
+  id: string;
+  pid: number;
+  pluginId: string;
+  command: string;
+  startedAt: number;
+}
+
+export interface TrawlDialog {
+  pickFolder(options?: { title?: string; defaultPath?: string }): Promise<string | null>;
+  pickFile(options?: {
+    title?: string;
+    defaultPath?: string;
+    filters?: { name: string; extensions: string[] }[];
+  }): Promise<string | null>;
+}
+
+export interface TrawlProcess {
+  spawn(request: {
+    command: string;
+    args?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+  }): Promise<ProcessInfo>;
+  onOutput(id: string, cb: (line: { stream: "stdout" | "stderr"; text: string }) => void): () => void;
+  onExit(id: string, cb: (event: { code: number | null }) => void): () => void;
+  kill(id: string): Promise<void>;
+  list(): Promise<ProcessInfo[]>;
+}
+
 export interface TrawlHost {
   version: string;
   react: typeof React;
   mcp?: TrawlMcp;
+  /** Host API 1.8.0 and newer — always feature-detect. */
+  dialog?: TrawlDialog;
+  process?: TrawlProcess;
   events: {
     on(type: string, cb: (payload: unknown) => void): () => void;
     emit(type: string, payload?: unknown): void;
