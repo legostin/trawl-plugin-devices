@@ -42,6 +42,19 @@ export function extractWorkspace(line: string): string | null {
 export const isBrowserLine = (line: string): boolean => line.startsWith("[browser]");
 export const isBrowserReady = (line: string): boolean => /\[browser\].*(ready|skipping)/.test(line);
 
+/**
+ * Playwright frames some notices in box-drawing characters. Those belong in the
+ * log, but showing them as a step's caption looks like breakage.
+ */
+export const isDecorative = (line: string): boolean => /[╔╚║═╗╝│─]/.test(line);
+
+/** The caption shown next to a step, or null when the line is just noise. */
+export function stepDetail(line: string): string | null {
+  if (isDecorative(line)) return null;
+  const text = line.replace(/^\[browser\]\s*/, "").trim();
+  return text ? text.slice(0, 70) : null;
+}
+
 export interface AgentArgs {
   workspace?: string;
   port: number;

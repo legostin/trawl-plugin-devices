@@ -14,6 +14,7 @@ import {
   extractWorkspace,
   isBrowserLine,
   isBrowserReady,
+  stepDetail,
   DEFAULT_DEVICE,
   type Step,
 } from "./setup";
@@ -118,7 +119,10 @@ export function makeDevicesPanel(host: TrawlHost) {
         const offOutput = host.process.onOutput(proc.id, ({ text }) => {
           append(text);
           if (isBrowserLine(text)) {
-            setSteps((s) => setStep(s, "browser", isBrowserReady(text) ? "done" : "running", text.slice(10, 80)));
+            const caption = stepDetail(text);
+            setSteps((s) =>
+              setStep(s, "browser", isBrowserReady(text) ? "done" : "running", caption ?? undefined),
+            );
           }
           const found = extractToken(text);
           if (found) {

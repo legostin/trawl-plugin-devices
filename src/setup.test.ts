@@ -8,6 +8,7 @@ import {
   isBrowserLine,
   isBrowserReady,
   agentCommand,
+  stepDetail,
 } from "./setup";
 
 it("reads the token the agent prints", () => {
@@ -33,6 +34,14 @@ it("recognises browser progress lines", () => {
   expect(isBrowserReady("[browser] chromium ready")).toBe(true);
   expect(isBrowserReady("[browser] cannot locate the Playwright CLI; skipping chromium")).toBe(true);
   expect(isBrowserLine("token: abc")).toBe(false);
+});
+
+it("keeps Playwright's box-drawing noise out of step captions", () => {
+  expect(stepDetail("[browser] ensuring chromium is installed…")).toBe("ensuring chromium is installed…");
+  expect(stepDetail("[browser] ╔════════════════════╗")).toBeNull();
+  expect(stepDetail("[browser] ║ WARNING: It looks like you are running… ║")).toBeNull();
+  expect(stepDetail("[browser] ")).toBeNull();
+  expect(stepDetail("[browser] chromium ready")).toBe("chromium ready");
 });
 
 it("builds the agent command, omitting an unset workspace", () => {
