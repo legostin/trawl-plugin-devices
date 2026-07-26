@@ -107,6 +107,8 @@ export function makeDevicesPanel(host: TrawlHost) {
       guard(async () => {
         if (!host.process) throw new Error("this Trawl version cannot start the agent");
         setLog([]);
+        // Repeated Starts must not stack agents; ours are killed before a respawn.
+        for (const proc of await host.process.list()) await host.process.kill(proc.id).catch(() => {});
 
         // Capture first: the browser is pointed at Trawl's proxy, and the agent
         // is told that port at startup.
@@ -186,7 +188,10 @@ export function makeDevicesPanel(host: TrawlHost) {
           // Straight into recording: a headed browser opens through the proxy
           // with the recorder overlay, so the next click is already captured.
           setSteps((s) => setStep(s, "record", "running"));
-          const rec = await probe.post<{ id: string }>("/record/start", { deviceId: device.id });
+          const rec = await probe.post<{ id: string }>("/record/start", {
+            deviceId: device.id,
+            proxyPort,
+          });
           setRecordingId(rec.id);
           setSteps((s) => setStep(s, "record", "done", "browser open — click away, then Stop recording"));
         } catch (err) {
@@ -212,14 +217,24 @@ export function makeDevicesPanel(host: TrawlHost) {
 
     const runScript = () =>
       guard(async () => {
-        const started = await runs.start({ path: selectedScript || undefined, code, deviceId });
+        const live = await host.capture?.start();
+        const started = await runs.start({
+          path: selectedScript || undefined,
+          code,
+          deviceId,
+          proxyPort: live?.port ?? settings.proxyPort,
+        });
         setReport(started);
         setReport(await runs.waitFor(started.runId));
       });
 
     const startRecording = () =>
       guard(async () => {
-        const started = await agent.post<{ id: string }>("/record/start", { deviceId });
+        const live = await host.capture?.start();
+        const started = await agent.post<{ id: string }>("/record/start", {
+          deviceId,
+          proxyPort: live?.port ?? settings.proxyPort,
+        });
         setRecordingId(started.id);
       });
 
