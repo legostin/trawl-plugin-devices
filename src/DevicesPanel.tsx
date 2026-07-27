@@ -62,6 +62,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [openSessions, setOpenSessions] = useState<{ sessionId: string; currentUrl: string | null }[]>([]);
     /** "" means a fresh browser; otherwise continue in that open one. */
     const [sessionId, setSessionId] = useState("");
+    /** Set while recording the missing steps for a failed run. */
+    const [continuationLine, setContinuationLine] = useState<number | null>(null);
     const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
     const editorRef = useRef<ScriptEditorApi | null>(null);
     const [reportWidth, setReportWidth] = useState(45); // percent
@@ -107,6 +109,13 @@ export function makeDevicesPanel(host: TrawlHost) {
         offStop();
       };
     }, []);
+
+    // Point at the line a run died on: reading a stack trace to find your place
+    // in your own script is work the tool should do.
+    useEffect(() => {
+      const failed = report?.steps.find((s) => s.status === "failed");
+      editorRef.current?.highlightLines?.(failed?.line ? [failed.line] : []);
+    }, [report]);
 
     // The editor learns this plugin's language: steps from the agent (never a
     // hard-coded copy), script paths for run('…'), project variables for {{…}}.
@@ -348,6 +357,25 @@ export function makeDevicesPanel(host: TrawlHost) {
         }
       });
 
+    /**
+     * Record the missing bit right where the run stopped: the browser is still
+     * sitting on the failure, so whatever extra click or confirmation is needed
+     * can be performed and spliced into the script at that line.
+     */
+    const recordContinuation = () =>
+      guard(async () => {
+        const failedStep = report?.steps.find((s) => s.status === "failed");
+        if (!report?.sessionId || !failedStep) return;
+        const live = await host.capture?.start();
+        const started = await agent.post<{ id: string }>("/record/start", {
+          sessionId: report.sessionId,
+          proxyPort: live?.port ?? settings.proxyPort,
+        });
+        setRecordingId(started.id);
+        setContinuationLine(failedStep.line ?? null);
+        setSessionId(report.sessionId);
+      });
+
     const startRecording = () =>
       guard(async () => {
         const live = await host.capture?.start();
@@ -363,6 +391,26 @@ export function makeDevicesPanel(host: TrawlHost) {
     const stopRecording = () =>
       guard(async () => {
         if (!recordingId) return;
+        if (continuationLine !== null) {
+          const result = await agent.post<{ code: string; warnings: string[] }>(
+            `/record/${recordingId}/stop`,
+            {},
+          );
+          setRecordingId(null);
+          // Everything the recorder produced, minus its header comment, goes in
+          // above the step that failed — that is where it was missing.
+          const lines = result.code
+            .split("\n")
+            .filter((line) => line.trim() && !line.startsWith("//"))
+            .join("\n");
+          if (lines) {
+            editorRef.current?.insertLines?.(continuationLine, lines);
+            setCode(editorRef.current?.getValue() ?? code);
+          }
+          setContinuationLine(null);
+          if (result.warnings.length) setError(result.warnings.join("; "));
+          return;
+        }
         const name = scriptPath(scriptName) || selectedScript || `scripts/recorded-${scripts.length + 1}.js`;
         const result = await agent.post<{ code: string; scriptPath?: string; warnings: string[] }>(
           `/record/${recordingId}/stop`,
@@ -525,7 +573,15 @@ export function makeDevicesPanel(host: TrawlHost) {
 
           {recordingId ? (
             <Button disabled={busy} onClick={() => void stopRecording()}>
-              Stop recording
+              {continuationLine !== null ? `Stop and insert at line ${continuationLine}` : "Stop recording"}
+            </Button>
+          ) : report?.sessionId && report.steps.some((s) => s.status === "failed") ? (
+            <Button
+              disabled={busy}
+              title="The browser is still on the failure — record what it needed and drop it into the script"
+              onClick={() => void recordContinuation()}
+            >
+              Record the missing steps
             </Button>
           ) : (
             <Button disabled={busy || !deviceId} onClick={() => void startRecording()}>

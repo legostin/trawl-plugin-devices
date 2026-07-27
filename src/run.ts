@@ -13,6 +13,8 @@ import {
 
 export interface StepReport {
   index: number;
+  /** 1-based line in the script, when the agent could tell. */
+  line?: number;
   action: string;
   args: unknown[];
   name?: string;

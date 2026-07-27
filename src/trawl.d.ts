@@ -81,6 +81,9 @@ export interface ScriptEditorApi {
   replaceAll(text: string): void;
   getSelectionText(): string;
   getValue(): string;
+  /** Host API 1.11.0 and newer. */
+  highlightLines?(lines: number[], kind?: "error" | "warning" | "info"): void;
+  insertLines?(at: number, text: string): void;
 }
 
 export interface CompletionItem {
