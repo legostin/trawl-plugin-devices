@@ -300,11 +300,15 @@ export function makeDevicesPanel(host: TrawlHost) {
           // Straight into recording: a headed browser opens through the proxy
           // with the recorder overlay, so the next click is already captured.
           setSteps((s) => setStep(s, "record", "running"));
-          const rec = await probe.post<{ id: string }>("/record/start", {
+          const rec = await probe.post<{ id: string; sessionId: string }>("/record/start", {
             deviceId: device.id,
             proxyPort,
           });
           setRecordingId(rec.id);
+          // The browser that just opened is the one to keep working in — list it
+          // and select it, or the picker still says "new browser".
+          setSessionId(rec.sessionId);
+          await loadEverything();
           setSteps((s) => setStep(s, "record", "done", "browser open — click away, then Stop recording"));
         } catch (err) {
           setSteps((s) => setStep(s, "token", "failed", (err as Error).message));
@@ -379,13 +383,15 @@ export function makeDevicesPanel(host: TrawlHost) {
     const startRecording = () =>
       guard(async () => {
         const live = await host.capture?.start();
-        const started = await agent.post<{ id: string }>("/record/start", {
+        const started = await agent.post<{ id: string; sessionId: string }>("/record/start", {
           // Continuing in an open browser keeps everything already done there —
           // log in once, then record just the part you care about.
           ...(sessionId ? { sessionId } : { deviceId }),
           proxyPort: live?.port ?? settings.proxyPort,
         });
         setRecordingId(started.id);
+        setSessionId(started.sessionId);
+        await loadEverything();
       });
 
     const stopRecording = () =>
@@ -420,6 +426,7 @@ export function makeDevicesPanel(host: TrawlHost) {
         setCode(result.code);
         setSelectedScript(result.scriptPath ?? "");
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
+        await loadEverything();
         if (result.warnings.length) setError(result.warnings.join("; "));
       });
 
