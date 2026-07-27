@@ -64,6 +64,13 @@ export interface AgentArgs {
   proxyPort?: number;
 }
 
+/**
+ * Insurance, not a fix: npx usually re-resolves `@latest`, but it can serve a
+ * cached copy when the registry is slow or unreachable. Preferring the network
+ * keeps a stale agent from starting silently.
+ */
+export const AGENT_ENV = { npm_config_prefer_online: "true" };
+
 /** The command the plugin runs — also what the consent dialog shows. */
 export function agentCommand(args: AgentArgs): { command: string; args: string[] } {
   return {

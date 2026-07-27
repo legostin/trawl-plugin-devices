@@ -13,6 +13,7 @@ import {
   INITIAL_STEPS,
   setStep,
   agentCommand,
+  AGENT_ENV,
   extractPort,
   extractToken,
   extractWorkspace,
@@ -158,7 +159,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           port: settings.agentPort,
           proxyPort,
         });
-        const proc = await host.process.spawn({ command, args });
+        const proc = await host.process.spawn({ command, args, env: AGENT_ENV });
 
         let livePort = settings.agentPort;
         const offOutput = host.process.onOutput(proc.id, ({ text }) => {
@@ -170,7 +171,12 @@ export function makeDevicesPanel(host: TrawlHost) {
             void saveToken(host, found);
           }
           const port = extractPort(text);
-          if (port) livePort = port;
+          if (port) {
+            livePort = port;
+            // Without this the panel keeps talking to whatever sits on the old
+            // port — usually the very agent we just tried to replace.
+            if (port !== settings.agentPort) void saveSettings(host, { agentPort: port }).then(setSettings);
+          }
         });
 
         try {
@@ -221,7 +227,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           port: settings.agentPort,
           proxyPort,
         });
-        const proc = await host.process.spawn({ command, args });
+        const proc = await host.process.spawn({ command, args, env: AGENT_ENV });
 
         let livePort = settings.agentPort;
         const offOutput = host.process.onOutput(proc.id, ({ text }) => {
