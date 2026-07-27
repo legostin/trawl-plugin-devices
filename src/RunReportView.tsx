@@ -3,6 +3,16 @@ import type { TrawlHost } from "./trawl";
 import type { RunReport, StepReport } from "./run";
 import { bugReport } from "./bugReport";
 
+/** A run someone stopped by hand is not a red run: nothing was found wrong. */
+export const runStatusColour = (status: RunReport["status"]): string =>
+  status === "passed"
+    ? "text-green-500"
+    : status === "cancelled"
+      ? "text-muted-foreground"
+      : status === "running"
+        ? "text-primary"
+        : "text-destructive";
+
 const statusColour = (status: StepReport["status"]): string =>
   status === "passed" ? "text-green-500" : status === "failed" ? "text-destructive" : "text-muted-foreground";
 
@@ -58,7 +68,7 @@ export function RunReportView({
   return (
     <div className="p-3 flex flex-col gap-2 overflow-auto h-full">
       <div className="flex gap-2 items-center">
-        <span className={report.status === "passed" ? "text-green-500" : "text-destructive"}>{report.status}</span>
+        <span className={runStatusColour(report.status)}>{report.status}</span>
         <span className="text-muted-foreground text-xs">
           {report.durationMs} ms · {report.steps.length} steps
         </span>

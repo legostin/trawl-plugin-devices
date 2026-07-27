@@ -27,7 +27,8 @@ export function bugReport(report: RunReport, context: BugReportContext = {}): st
   const failed = report.steps.find((s) => s.status === "failed");
   const lines: string[] = [];
 
-  lines.push(`# ${report.status === "passed" ? "Run" : "Failure"}: ${report.script ?? "inline scenario"}`);
+  const kind = report.status === "passed" || report.status === "cancelled" ? "Run" : "Failure";
+  lines.push(`# ${kind}: ${report.script ?? "inline scenario"}`);
   lines.push("");
   lines.push(`- **Result:** ${report.status} after ${report.durationMs} ms`);
   lines.push(`- **Device:** ${report.device}`);

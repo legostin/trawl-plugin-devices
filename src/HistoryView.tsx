@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { TrawlHost } from "./trawl";
 import type { AgentClient } from "./agent";
 import type { RunReport } from "./run";
+import { runStatusColour } from "./RunReportView";
 
 const when = (ts: number): string => new Date(ts).toLocaleString();
 
@@ -51,7 +52,7 @@ export function HistoryView({
       {runs.map((run) => (
         <div key={run.runId} className="border border-border rounded p-2 text-xs flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span className={run.status === "passed" ? "text-green-500" : "text-destructive"}>{run.status}</span>
+            <span className={runStatusColour(run.status)}>{run.status}</span>
             <span className="text-muted-foreground">{when(run.startedAt)}</span>
             <span className="text-muted-foreground">{run.durationMs} ms</span>
             <span className="text-muted-foreground">{run.steps?.length ?? 0} steps</span>
