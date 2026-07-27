@@ -96,6 +96,15 @@ it("subscribes for correlation before posting the run", async () => {
   expect(h.order.indexOf("subscribe")).toBeLessThan(h.order.indexOf("/runs"));
 });
 
+it("runs what is in the editor, not the file on disk", async () => {
+  const h = harness();
+  await h.controller.start({ path: "scripts/a.js", code: "goto('/edited')", deviceId: "d1" });
+  const body = h.calls.find((c) => c.path === "/runs")!.body as Record<string, unknown>;
+  // Both: the code that runs, and the path the report is filed under.
+  expect(body.code).toBe("goto('/edited')");
+  expect(body.path).toBe("scripts/a.js");
+});
+
 it("sends the project env and only the scanned secrets", async () => {
   const h = harness();
   await h.controller.start({ path: "scripts/a.js", code: "fill({label:'p'}, secret('PWD'))", deviceId: "d1" });

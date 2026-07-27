@@ -47,6 +47,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [scripts, setScripts] = useState<string[]>([]);
     const [selectedScript, setSelectedScript] = useState("");
     const [code, setCode] = useState("");
+    /** What the selected script looks like on disk — composition reads that. */
+    const [savedCode, setSavedCode] = useState("");
     const [deviceId, setDeviceId] = useState("");
     const [report, setReport] = useState<RunReport | null>(null);
     const [recordingId, setRecordingId] = useState<string | null>(null);
@@ -329,7 +331,11 @@ export function makeDevicesPanel(host: TrawlHost) {
       guard(async () => {
         setSelectedScript(path);
         setScriptName(path.replace(/^scripts\//, "").replace(/\.js$/, ""));
-        if (path) setCode((await agent.get<{ code: string }>("/scripts/read", { path })).code);
+        if (path) {
+          const loaded = (await agent.get<{ code: string }>("/scripts/read", { path })).code;
+          setCode(loaded);
+          setSavedCode(loaded);
+        }
       });
 
     /** `login` and `scripts/login.js` both mean the same file. */
@@ -434,6 +440,7 @@ export function makeDevicesPanel(host: TrawlHost) {
       guard(async () => {
         const path = scriptPath(scriptName) || selectedScript || `scripts/script-${scripts.length + 1}.js`;
         await agent.post("/scripts/write", { path, code });
+        setSavedCode(code);
         setSelectedScript(path);
         setScriptName(path.replace(/^scripts\//, "").replace(/\.js$/, ""));
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
@@ -598,6 +605,14 @@ export function makeDevicesPanel(host: TrawlHost) {
           <Button disabled={busy || !code} onClick={() => void saveScript()}>
             Save
           </Button>
+          {selectedScript && (
+            <span
+              className="text-xs text-muted-foreground"
+              title="run() reads scripts from disk, so a scenario you compose into must be saved"
+            >
+              {savedCode === code ? "saved" : "unsaved"}
+            </span>
+          )}
           <Button disabled={busy || !deviceId || !code} onClick={() => void runScript()}>
             Run
           </Button>

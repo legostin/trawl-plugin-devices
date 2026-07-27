@@ -143,7 +143,10 @@ export class RunController {
     try {
       const report = await this.agent.post<RunReport>("/runs", {
         runTag: tag,
-        ...(input.path ? { path: input.path } : { code: input.code }),
+        // What is on screen is what runs. Sending only the path would execute
+        // the file instead, quietly ignoring every unsaved edit.
+        code: input.code,
+        ...(input.path ? { path: input.path } : {}),
         deviceId: input.deviceId,
         sessionId: input.sessionId,
         headless: input.headless,
