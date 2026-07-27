@@ -402,6 +402,15 @@ export function makeDevicesPanel(host: TrawlHost) {
         }
       });
 
+    /** Give up on the run. It stops at the next step, held or not. */
+    const stopRun = () =>
+      guard(async () => {
+        if (!report || report.status !== "running") return;
+        // A held run notices this too: the pause loop watches for it.
+        await runs.cancel(report.runId);
+        setRunPaused(false);
+      });
+
     /** Hold the run between steps; the browser stays exactly where it is. */
     const toggleRunPause = () =>
       guard(async () => {
@@ -714,6 +723,14 @@ export function makeDevicesPanel(host: TrawlHost) {
                   Record here
                 </Button>
               )}
+              <Button
+                disabled={busy}
+                variant="ghost"
+                title="Give up on this run — it stops at the next step"
+                onClick={() => void stopRun()}
+              >
+                ⏹ Stop run
+              </Button>
             </>
           ) : report?.sessionId && report.steps.some((s) => s.status === "failed") ? (
             <Button
