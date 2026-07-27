@@ -135,6 +135,61 @@ export function makeDevicesPanel(host: TrawlHost) {
     const append = (text: string): void =>
       setLog((prev) => [...prev, text].slice(-MAX_LOG));
 
+    /**
+     * Replace whatever agent is running with a fresh one. Needed more often
+     * than it sounds: an agent left from an earlier session keeps its old
+     * version, and half the vocabulary silently does not exist.
+     */
+    const restartAgent = () =>
+      guard(async () => {
+        if (!host.process) throw new Error("this Trawl version cannot start the agent");
+        setLog([]);
+        setSteps(setStep(INITIAL_STEPS, "agent", "running", "stopping the old agent"));
+
+        // Ask it to quit — this also reaches an agent this plugin never spawned.
+        await agent.post("/shutdown", {}).catch(() => {});
+        for (const proc of await host.process.list()) await host.process.kill(proc.id).catch(() => {});
+        await new Promise((r) => setTimeout(r, 700));
+
+        const capture = await host.capture?.start();
+        const proxyPort = capture?.port ?? settings.proxyPort;
+        const { command, args } = agentCommand({
+          workspace: settings.workspace || undefined,
+          port: settings.agentPort,
+          proxyPort,
+        });
+        const proc = await host.process.spawn({ command, args });
+
+        let livePort = settings.agentPort;
+        const offOutput = host.process.onOutput(proc.id, ({ text }) => {
+          append(text);
+          const found = extractToken(text);
+          if (found) {
+            tokenRef.current = found;
+            setTokenState(found);
+            void saveToken(host, found);
+          }
+          const port = extractPort(text);
+          if (port) livePort = port;
+        });
+
+        try {
+          const probe = new AgentClient(host, () => ({ agentPort: livePort, token: tokenRef.current }));
+          const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+          let live: Health | null = null;
+          while (Date.now() < deadline) {
+            live = await probe.health().catch(() => null);
+            if (live?.authenticated) break;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          if (!live?.authenticated) throw new Error("the new agent did not answer — see the log");
+          setSteps((s) => setStep(s, "agent", "done", `agent ${live.agent}`));
+          await loadEverything();
+        } finally {
+          offOutput();
+        }
+      });
+
     /** Start the agent, wait for it to answer, and make sure a device exists. */
     const startSetup = () =>
       guard(async () => {
@@ -339,6 +394,10 @@ export function makeDevicesPanel(host: TrawlHost) {
 
     const device = devices.find((d) => d.id === deviceId);
     const envVars = host.projects.active()?.env ?? [];
+    /** Vocabulary this plugin uses that the running agent has never heard of. */
+    const missingSteps = health?.steps
+      ? ["mock", "run", "saveState", "useState"].filter((step) => !health.steps!.includes(step))
+      : [];
 
     /** Both knobs live on the device, so they survive restarts. */
     const patchDevice = (patch: Partial<Device>) =>
@@ -478,9 +537,20 @@ export function makeDevicesPanel(host: TrawlHost) {
             close browser
           </label>
 
-          <span className="ml-auto text-xs text-muted-foreground">
-            agent {health?.agent} · {health?.workspace}
-            {!captureOn && " · capture off: steps will have no traffic"}
+          <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <span title={health?.workspace ?? ""}>agent {health?.agent}</span>
+            {missingSteps.length > 0 && (
+              <span
+                className="rounded bg-amber-500/20 px-1 text-amber-500"
+                title={`This agent has no ${missingSteps.join(", ")} — restart it to pick up the current version`}
+              >
+                outdated
+              </span>
+            )}
+            {!captureOn && <span>capture off: steps will have no traffic</span>}
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void restartAgent()}>
+              Restart agent
+            </Button>
           </span>
         </div>
 
