@@ -59,6 +59,9 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [pane, setPane] = useState<"report" | "suite" | "history" | "guide">("report");
     const [suites, setSuites] = useState<string[]>([]);
     const [selectedSuite, setSelectedSuite] = useState("");
+    const [openSessions, setOpenSessions] = useState<{ sessionId: string; currentUrl: string | null }[]>([]);
+    /** "" means a fresh browser; otherwise continue in that open one. */
+    const [sessionId, setSessionId] = useState("");
     const [suiteReport, setSuiteReport] = useState<SuiteReport | null>(null);
     const editorRef = useRef<ScriptEditorApi | null>(null);
     const [reportWidth, setReportWidth] = useState(45); // percent
@@ -76,8 +79,12 @@ export function makeDevicesPanel(host: TrawlHost) {
       const fresh = await agent.health();
       setHealth(fresh);
       if (fresh.authenticated) {
-        const listed = await agent.get<{ devices: Device[] }>("/devices");
+        const listed = await agent.get<{
+          devices: Device[];
+          sessions?: { sessionId: string; currentUrl: string | null }[];
+        }>("/devices");
         setDevices(listed.devices);
+        setOpenSessions(listed.sessions ?? []);
         setDeviceId((current) => current || listed.devices[0]?.id || "");
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
         // Older agents have no suites endpoint; an empty list simply hides the UI.
@@ -327,19 +334,27 @@ export function makeDevicesPanel(host: TrawlHost) {
           path: selectedScript || undefined,
           code,
           deviceId,
+          sessionId: sessionId || undefined,
           proxyPort: live?.port ?? settings.proxyPort,
           stepDelayMs: device?.stepDelayMs,
           closeAfterRun: device?.closeAfterRun,
         });
         setReport(started);
-        setReport(await runs.waitFor(started.runId));
+        const finished = await runs.waitFor(started.runId);
+        setReport(finished);
+        if (finished.sessionId) {
+          setSessionId(finished.sessionId);
+          await loadEverything();
+        }
       });
 
     const startRecording = () =>
       guard(async () => {
         const live = await host.capture?.start();
         const started = await agent.post<{ id: string }>("/record/start", {
-          deviceId,
+          // Continuing in an open browser keeps everything already done there —
+          // log in once, then record just the part you care about.
+          ...(sessionId ? { sessionId } : { deviceId }),
           proxyPort: live?.port ?? settings.proxyPort,
         });
         setRecordingId(started.id);
@@ -478,6 +493,19 @@ export function makeDevicesPanel(host: TrawlHost) {
               </Button>
             </span>
           )}
+
+          <Select
+            value={sessionId}
+            onChange={(e) => setSessionId(e.target.value)}
+            title="Where Run and Record happen"
+          >
+            <option value="">new browser</option>
+            {openSessions.map((s) => (
+              <option key={s.sessionId} value={s.sessionId}>
+                open: {(s.currentUrl ?? "blank").replace(/^https?:\/\//, "").slice(0, 28)}
+              </option>
+            ))}
+          </Select>
 
           <Select value={selectedScript} onChange={(e) => void openScript(e.target.value)}>
             <option value="">— new script —</option>

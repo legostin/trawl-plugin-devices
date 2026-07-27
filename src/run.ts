@@ -26,6 +26,8 @@ export interface StepReport {
 
 export interface RunReport {
   runId: string;
+  /** Present when the browser was left open, so a fragment can be recorded from there. */
+  sessionId?: string;
   script: string | null;
   device: string;
   status: "running" | "passed" | "failed" | "error";
