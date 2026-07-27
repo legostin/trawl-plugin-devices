@@ -1,7 +1,7 @@
 {
   "name": "trawl-plugin-devices",
   "private": true,
-  "version": "0.19.0",
+  "version": "0.20.0",
   "type": "module",
   "scripts": {
     "build": "tsc && vite build",
@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/react": "^19.1.8",
     "@vitejs/plugin-react": "^4.6.0",
     "react": "^19.1.0",

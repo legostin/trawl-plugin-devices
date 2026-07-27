@@ -5,6 +5,7 @@ import { RunController, type RunReport } from "./run";
 import { loadSettings, loadToken, saveSettings, saveToken, DEFAULT_SETTINGS, type Settings } from "./settings";
 import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
+import { MapView } from "./MapView";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
 import { SuiteView, type SuiteReport } from "./SuiteView";
@@ -58,7 +59,7 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
     const [scriptName, setScriptName] = useState("");
-    const [pane, setPane] = useState<"report" | "suite" | "history" | "guide">("report");
+    const [pane, setPane] = useState<"report" | "map" | "suite" | "history" | "guide">("report");
     const [suites, setSuites] = useState<string[]>([]);
     const [selectedSuite, setSelectedSuite] = useState("");
     const [openSessions, setOpenSessions] = useState<{ sessionId: string; currentUrl: string | null }[]>([]);
@@ -808,7 +809,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           />
           <div style={{ width: `${reportWidth}%` }} className="min-w-0 flex flex-col">
             <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
-              {(["report", "suite", "history", "guide"] as const).map((tab) => (
+              {(["report", "map", "suite", "history", "guide"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setPane(tab)}
@@ -850,6 +851,18 @@ export function makeDevicesPanel(host: TrawlHost) {
                   onOpen={(past) => {
                     setReport(past);
                     setPane("report");
+                  }}
+                />
+              )}
+              {pane === "map" && (
+                <MapView
+                  host={host}
+                  agent={agent}
+                  onInsert={(reference) => {
+                    // At the caret: the reference is wanted where the step is
+                    // being written, not at the top of the file.
+                    editorRef.current?.insert(`click('${reference.replace(/'/g, "\\'")}')`);
+                    setCode(editorRef.current?.getValue() ?? code);
                   }}
                 />
               )}
