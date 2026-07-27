@@ -88,7 +88,12 @@ export function makeDevicesPanel(host: TrawlHost) {
           sessions?: { sessionId: string; currentUrl: string | null }[];
         }>("/devices");
         setDevices(listed.devices);
-        setOpenSessions(listed.sessions ?? []);
+        const live = listed.sessions ?? [];
+        setOpenSessions(live);
+        // A browser the human closed is gone from the agent but still selected
+        // here; keeping it means the next Record aims at a window that is not
+        // there any more.
+        setSessionId((current) => (current && !live.some((s) => s.sessionId === current) ? "" : current));
         setDeviceId((current) => current || listed.devices[0]?.id || "");
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
         // Older agents have no suites endpoint; an empty list simply hides the UI.
@@ -165,6 +170,12 @@ export function makeDevicesPanel(host: TrawlHost) {
       guard(async () => {
         if (!host.process) throw new Error("this Trawl version cannot start the agent");
         setLog([]);
+        // The new agent knows nothing of the old one's recordings and browsers.
+        // Holding on to their ids is how the panel ends up offering "Stop
+        // recording" for a recording that no longer exists anywhere.
+        setRecordingId(null);
+        setSessionId("");
+        setContinuationLine(null);
         setSteps(setStep(INITIAL_STEPS, "agent", "running", "stopping the old agent"));
 
         // Ask it to quit — this also reaches an agent this plugin never spawned.
@@ -211,6 +222,22 @@ export function makeDevicesPanel(host: TrawlHost) {
           if (!live?.authenticated) throw new Error("the new agent did not answer — see the log");
           setSteps((s) => setStep(s, "agent", "done", `agent ${live.agent}`));
           await loadEverything();
+
+          // Killing the agent takes its browser with it, so a restart that left
+          // you with no window is a restart that undid your setup. Open one.
+          const device = (await probe.get<{ devices: Device[] }>("/devices")).devices[0];
+          if (device) {
+            setSteps((s) => setStep(s, "browser", "running"));
+            const opened = await probe.post<{ session: { sessionId: string } }>("/sessions", {
+              deviceId: device.id,
+              proxyPort,
+              headless: false,
+            });
+            setDeviceId(device.id);
+            setSessionId(opened.session.sessionId);
+            setSteps((s) => setStep(s, "browser", "done", "browser open"));
+            await loadEverything();
+          }
         } finally {
           offOutput();
         }
@@ -389,12 +416,22 @@ export function makeDevicesPanel(host: TrawlHost) {
     const startRecording = () =>
       guard(async () => {
         const live = await host.capture?.start();
-        const started = await agent.post<{ id: string; sessionId: string }>("/record/start", {
-          // Continuing in an open browser keeps everything already done there —
-          // log in once, then record just the part you care about.
-          ...(sessionId ? { sessionId } : { deviceId }),
-          proxyPort: live?.port ?? settings.proxyPort,
-        });
+        const proxyPort = live?.port ?? settings.proxyPort;
+        const begin = (where: Record<string, string>) =>
+          agent.post<{ id: string; sessionId: string }>("/record/start", { ...where, proxyPort });
+
+        // Continuing in an open browser keeps everything already done there —
+        // log in once, then record just the part you care about. But a window
+        // the human closed in the meantime should cost a new browser, not an
+        // error about a session nobody can see.
+        const started = sessionId
+          ? await begin({ sessionId }).catch((err: Error) => {
+              if (!/unknown session/i.test(err.message)) throw err;
+              setSessionId("");
+              return begin({ deviceId });
+            })
+          : await begin({ deviceId });
+
         setRecordingId(started.id);
         setSessionId(started.sessionId);
         await loadEverything();
@@ -403,6 +440,17 @@ export function makeDevicesPanel(host: TrawlHost) {
     const stopRecording = () =>
       guard(async () => {
         if (!recordingId) return;
+        // An agent restarted under us has no memory of this recording. Staying
+        // in "recording" for ever, refusing to stop, helps nobody.
+        const stillThere = await agent.get(`/record/${recordingId}`).then(
+          () => true,
+          () => false,
+        );
+        if (!stillThere) {
+          setRecordingId(null);
+          setContinuationLine(null);
+          throw new Error("this recording is gone — the agent was restarted. Press Record to start a new one.");
+        }
         if (continuationLine !== null) {
           const result = await agent.post<{ code: string; warnings: string[] }>(
             `/record/${recordingId}/stop`,
