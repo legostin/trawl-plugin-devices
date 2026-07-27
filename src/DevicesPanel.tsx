@@ -30,6 +30,8 @@ interface Device {
   headless: boolean;
   stepDelayMs?: number;
   closeAfterRun?: boolean;
+  video?: boolean;
+  videoFps?: number;
 }
 
 const MAX_LOG = 400;
@@ -534,6 +536,27 @@ export function makeDevicesPanel(host: TrawlHost) {
             />
             ms
           </label>
+          <label
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+            title="Record the run as frames, with the pointer drawn in — playable from the history tab"
+          >
+            <input
+              type="checkbox"
+              checked={device?.video ?? false}
+              onChange={(e) => void patchDevice({ video: e.target.checked })}
+            />
+            record
+          </label>
+          {device?.video && (
+            <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Frames per second">
+              <Input
+                value={String(device?.videoFps ?? 5)}
+                onChange={(e) => void patchDevice({ videoFps: Math.min(30, Math.max(1, Number(e.target.value) || 5)) })}
+                style={{ width: 48 }}
+              />
+              fps
+            </label>
+          )}
           <label className="flex items-center gap-1 text-xs text-muted-foreground" title="Close the browser when a run ends">
             <input
               type="checkbox"
