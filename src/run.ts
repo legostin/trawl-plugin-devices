@@ -33,6 +33,8 @@ export interface RunReport {
   script: string | null;
   device: string;
   status: "running" | "passed" | "failed" | "error";
+  /** Held between steps; the browser sits exactly where the scenario left it. */
+  paused?: boolean;
   startedAt: number;
   durationMs: number;
   steps: StepReport[];
@@ -287,12 +289,28 @@ export class RunController {
     return result;
   }
 
-  /** Poll until the run finishes or `timeoutMs` elapses. */
-  async waitFor(runId: string, timeoutMs = 10 * 60_000, intervalMs = 1000): Promise<RunReport> {
-    const deadline = Date.now() + timeoutMs;
+  /** Hold the run between steps, or let it carry on. */
+  async setPaused(runId: string, paused: boolean): Promise<void> {
+    await this.agent.post(`/runs/${runId}/pause`, { paused });
+  }
+
+  /**
+   * Poll until the run finishes or `timeoutMs` elapses. `onProgress` sees every
+   * poll, which is how the panel can offer Pause while the run is still going.
+   * A held run does not age: waiting for a human is not a timeout.
+   */
+  async waitFor(
+    runId: string,
+    timeoutMs = 10 * 60_000,
+    intervalMs = 1000,
+    onProgress?: (report: RunReport) => void,
+  ): Promise<RunReport> {
+    let deadline = Date.now() + timeoutMs;
     for (;;) {
       const report = await this.poll(runId);
+      onProgress?.(report);
       if (report.status !== "running") return report;
+      if (report.paused) deadline = Date.now() + timeoutMs;
       if (Date.now() > deadline) return report;
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }

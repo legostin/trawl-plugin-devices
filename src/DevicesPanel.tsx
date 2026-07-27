@@ -53,6 +53,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [deviceId, setDeviceId] = useState("");
     const [report, setReport] = useState<RunReport | null>(null);
     const [recordingId, setRecordingId] = useState<string | null>(null);
+    const [recordingPaused, setRecordingPaused] = useState(false);
+    const [runPaused, setRunPaused] = useState(false);
     const [busy, setBusy] = useState(false);
     const [captureOn, setCaptureOn] = useState(true);
     const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
@@ -175,6 +177,7 @@ export function makeDevicesPanel(host: TrawlHost) {
         // Holding on to their ids is how the panel ends up offering "Stop
         // recording" for a recording that no longer exists anywhere.
         setRecordingId(null);
+        setRecordingPaused(false);
         setSessionId("");
         setContinuationLine(null);
         setSteps(setStep(INITIAL_STEPS, "agent", "running", "stopping the old agent"));
@@ -335,6 +338,7 @@ export function makeDevicesPanel(host: TrawlHost) {
             proxyPort,
           });
           setRecordingId(rec.id);
+          setRecordingPaused(false);
           // The browser that just opened is the one to keep working in — list it
           // and select it, or the picker still says "new browser".
           setSessionId(rec.sessionId);
@@ -387,30 +391,48 @@ export function makeDevicesPanel(host: TrawlHost) {
           closeAfterRun: device?.closeAfterRun,
         });
         setReport(started);
-        const finished = await runs.waitFor(started.runId);
+        // Every poll lands on screen: a run you cannot watch is a run you
+        // cannot pause at the right moment.
+        const finished = await runs.waitFor(started.runId, undefined, undefined, setReport);
         setReport(finished);
+        setRunPaused(false);
         if (finished.sessionId) {
           setSessionId(finished.sessionId);
           await loadEverything();
         }
       });
 
+    /** Hold the run between steps; the browser stays exactly where it is. */
+    const toggleRunPause = () =>
+      guard(async () => {
+        if (!report || report.status !== "running") return;
+        const next = !runPaused;
+        await runs.setPaused(report.runId, next);
+        setRunPaused(next);
+      });
+
     /**
-     * Record the missing bit right where the run stopped: the browser is still
-     * sitting on the failure, so whatever extra click or confirmation is needed
-     * can be performed and spliced into the script at that line.
+     * Record the missing bit right where the run stopped — on a failure, or on
+     * a pause. The browser is sitting on that very step, so whatever extra
+     * click or confirmation is needed can be performed and spliced into the
+     * script at that line.
      */
     const recordContinuation = () =>
       guard(async () => {
-        const failedStep = report?.steps.find((s) => s.status === "failed");
-        if (!report?.sessionId || !failedStep) return;
+        // On a failure that is the step that died; while paused it is the step
+        // about to run, which is the one the missing action belongs before.
+        const at =
+          report?.steps.find((s) => s.status === "failed") ??
+          (report?.status === "running" ? report.steps[report.steps.length - 1] : undefined);
+        if (!report?.sessionId || !at) return;
         const live = await host.capture?.start();
         const started = await agent.post<{ id: string }>("/record/start", {
           sessionId: report.sessionId,
           proxyPort: live?.port ?? settings.proxyPort,
         });
         setRecordingId(started.id);
-        setContinuationLine(failedStep.line ?? null);
+        setRecordingPaused(false);
+        setContinuationLine(at.line ?? null);
         setSessionId(report.sessionId);
       });
 
@@ -434,8 +456,22 @@ export function makeDevicesPanel(host: TrawlHost) {
           : await begin({ deviceId });
 
         setRecordingId(started.id);
+        setRecordingPaused(false);
         setSessionId(started.sessionId);
         await loadEverything();
+      });
+
+    /**
+     * Stop taking clicks without ending the recording: a detour, a captcha or
+     * fixing a typo is not part of the scenario, and having to stop the whole
+     * recording to do it is what makes people re-record from the start.
+     */
+    const togglePause = () =>
+      guard(async () => {
+        if (!recordingId) return;
+        const next = !recordingPaused;
+        const state = await agent.post<{ paused: boolean }>(`/record/${recordingId}/pause`, { paused: next });
+        setRecordingPaused(state.paused);
       });
 
     const stopRecording = () =>
@@ -449,6 +485,7 @@ export function makeDevicesPanel(host: TrawlHost) {
         );
         if (!stillThere) {
           setRecordingId(null);
+          setRecordingPaused(false);
           setContinuationLine(null);
           throw new Error("this recording is gone — the agent was restarted. Press Record to start a new one.");
         }
@@ -458,6 +495,7 @@ export function makeDevicesPanel(host: TrawlHost) {
             {},
           );
           setRecordingId(null);
+          setRecordingPaused(false);
           // Everything the recorder produced, minus its header comment, goes in
           // above the step that failed — that is where it was missing.
           const lines = result.code
@@ -478,6 +516,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           { saveAs: name },
         );
         setRecordingId(null);
+        setRecordingPaused(false);
         setCode(result.code);
         setSelectedScript(result.scriptPath ?? "");
         setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
@@ -635,9 +674,47 @@ export function makeDevicesPanel(host: TrawlHost) {
           />
 
           {recordingId ? (
-            <Button disabled={busy} onClick={() => void stopRecording()}>
-              {continuationLine !== null ? `Stop and insert at line ${continuationLine}` : "Stop recording"}
-            </Button>
+            <>
+              <Button
+                disabled={busy}
+                variant={recordingPaused ? "default" : "ghost"}
+                title={
+                  recordingPaused
+                    ? "Take clicks again, carrying on where the recording left off"
+                    : "Stop taking clicks for a moment — a detour or a captcha is not part of the scenario"
+                }
+                onClick={() => void togglePause()}
+              >
+                {recordingPaused ? "▶ Resume" : "⏸ Pause"}
+              </Button>
+              <Button disabled={busy} onClick={() => void stopRecording()}>
+                {continuationLine !== null ? `Stop and insert at line ${continuationLine}` : "⏹ Stop"}
+              </Button>
+            </>
+          ) : report?.status === "running" ? (
+            <>
+              <Button
+                disabled={busy}
+                variant={runPaused ? "default" : "ghost"}
+                title={
+                  runPaused
+                    ? "Carry on from the step it was holding at"
+                    : "Hold between steps — the browser stays exactly where it is"
+                }
+                onClick={() => void toggleRunPause()}
+              >
+                {runPaused ? "▶ Resume run" : "⏸ Pause run"}
+              </Button>
+              {runPaused && report.sessionId && (
+                <Button
+                  disabled={busy}
+                  title="Do the missing bit by hand — it is spliced into the script at this step"
+                  onClick={() => void recordContinuation()}
+                >
+                  Record here
+                </Button>
+              )}
+            </>
           ) : report?.sessionId && report.steps.some((s) => s.status === "failed") ? (
             <Button
               disabled={busy}
@@ -739,10 +816,30 @@ export function makeDevicesPanel(host: TrawlHost) {
         </div>
 
         {recordingId && (
-          <div className="px-2 py-1.5 text-xs border-b border-border bg-primary/10 flex items-center gap-2">
-            <span className="text-primary">●</span>
-            Recording — do things in the browser window, then press “Stop recording”. Every click lands in the
-            script on the left.
+          <div
+            className={`px-2 py-1.5 text-xs border-b border-border flex items-center gap-2 ${
+              recordingPaused ? "bg-amber-500/10" : "bg-primary/10"
+            }`}
+          >
+            <span className={recordingPaused ? "text-amber-500" : "text-primary"}>
+              {recordingPaused ? "⏸" : "●"}
+            </span>
+            {recordingPaused
+              ? "Paused — clicks are being ignored. Do whatever you need, then press Resume; Stop finishes the recording."
+              : "Recording — do things in the browser window. Pause ignores clicks without ending it; Stop finishes and writes the script."}
+          </div>
+        )}
+
+        {report?.status === "running" && (
+          <div
+            className={`px-2 py-1.5 text-xs border-b border-border flex items-center gap-2 ${
+              runPaused ? "bg-amber-500/10" : "bg-primary/10"
+            }`}
+          >
+            <span className={runPaused ? "text-amber-500" : "text-primary"}>{runPaused ? "⏸" : "▶"}</span>
+            {runPaused
+              ? `Held at step ${report.steps.length} — the browser is sitting there. “Record here” splices what you do by hand into the script.`
+              : `Running — step ${report.steps.length}. Pause holds it between steps without losing the browser.`}
           </div>
         )}
 
