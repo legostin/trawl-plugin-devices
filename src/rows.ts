@@ -28,6 +28,16 @@ export type Command =
   | { kind: "rename"; section: string; name: string }
   | { kind: "extract"; section: string; path?: string };
 
+/**
+ * Where to insert so the new row lands *after* the given line: the anchor is the
+ * first row below it, and `null` means the end of the scenario. Used to put an
+ * assertion right after the step whose traffic it was pinned from.
+ */
+export function anchorAfterLine(rows: Row[], line: number | null): string | null {
+  if (line === null) return null;
+  return rows.find((row) => row.line > line)?.id ?? null;
+}
+
 /** Parsing lives in the agent: the plugin never reads JavaScript. */
 export class RowsClient {
   constructor(private readonly agent: AgentClient) {}

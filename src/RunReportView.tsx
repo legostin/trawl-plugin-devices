@@ -16,6 +16,15 @@ export const runStatusColour = (status: RunReport["status"]): string =>
 const statusColour = (status: StepReport["status"]): string =>
   status === "passed" ? "text-green-500" : status === "failed" ? "text-destructive" : "text-muted-foreground";
 
+/** The part of a url an assertion should match on: the query is data. */
+const pathOf = (url: string): string => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url.split("?")[0] ?? url;
+  }
+};
+
 /** How much of an error is worth showing before it buries the report. */
 const ERROR_PREVIEW_CHARS = 220;
 
@@ -45,14 +54,24 @@ function StepError({ error }: { error: NonNullable<StepReport["error"]> }) {
 }
 
 /** Steps with their HTTP flows; clicking a flow filters the Traffic view to it. */
+export interface PinRequest {
+  matcher: string;
+  status: number;
+  /** The line of the step it was observed at, so the assertion lands after it. */
+  afterLine: number | null;
+}
+
 export function RunReportView({
   host,
   report,
   context,
+  onPin,
 }: {
   host: TrawlHost;
   report: RunReport | null;
   context?: { workspace?: string | null; agentVersion?: string | null; env?: Record<string, string> };
+  /** Turn something that happened into something the scenario checks. */
+  onPin?: (request: PinRequest) => void;
 }) {
   const { StatusBadge, MethodBadge, Button } = host.ui;
   const [copied, setCopied] = useState(false);
@@ -105,7 +124,7 @@ export function RunReportView({
           {step.flows.map((flow, i) => (
             <div
               key={`${flow.url}-${i}`}
-              className="text-xs flex gap-2 items-center mt-1 cursor-pointer"
+              className="text-xs flex gap-2 items-center mt-1 cursor-pointer group"
               onClick={() => host.events.emit("filter:changed", { query: flow.url })}
               title={
                 flow.flowId === undefined ? "not correlated" : flow.approx ? "approximate match" : "exact match"
@@ -115,6 +134,24 @@ export function RunReportView({
               <StatusBadge status={flow.status ?? undefined} />
               <span className="truncate">{flow.url}</span>
               {flow.approx && <span className="text-muted-foreground">≈</span>}
+              {onPin && flow.status !== null && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto shrink-0 opacity-0 group-hover:opacity-100"
+                  title="Check this in the scenario — nobody has to remember the endpoint or the status"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPin({
+                      matcher: `${flow.method} ${pathOf(flow.url)}`,
+                      status: flow.status!,
+                      afterLine: step.line ?? null,
+                    });
+                  }}
+                >
+                  pin
+                </Button>
+              )}
             </div>
           ))}
         </div>

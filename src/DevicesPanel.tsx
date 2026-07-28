@@ -7,7 +7,7 @@ import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
 import { MapView, type ScreenFile } from "./MapView";
 import { RowsView } from "./RowsView";
-import { RowsClient, type Row, type Command } from "./rows";
+import { RowsClient, anchorAfterLine, type Row, type Command } from "./rows";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
 import { SuiteView, type SuiteReport } from "./SuiteView";
@@ -448,6 +448,23 @@ export function makeDevicesPanel(host: TrawlHost) {
         if (result.extracted) {
           setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
         }
+      });
+
+    /**
+     * An assertion written from what actually happened. Nobody has to remember
+     * the endpoint or the status — both are on the screen already, and the check
+     * lands right after the step that caused the request.
+     */
+    const pinObservation = (request: { matcher: string; status: number; afterLine: number | null }) =>
+      guard(async () => {
+        const result = await rowsClient.apply(code, {
+          kind: "insert",
+          before: anchorAfterLine(rows, request.afterLine),
+          action: "expectApi",
+          args: [request.matcher, request.status],
+        });
+        setCode(result.code);
+        editorRef.current?.replaceAll(result.code);
       });
 
     /**
@@ -1067,6 +1084,7 @@ export function makeDevicesPanel(host: TrawlHost) {
                 <RunReportView
                   host={host}
                   report={report}
+                  onPin={pinObservation}
                   context={{
                     workspace: health?.workspace ?? settings.workspace,
                     agentVersion: health?.agent ?? null,
