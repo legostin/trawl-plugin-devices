@@ -5,7 +5,9 @@ import { RunController, type RunReport } from "./run";
 import { loadSettings, loadToken, saveSettings, saveToken, DEFAULT_SETTINGS, type Settings } from "./settings";
 import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
-import { MapView } from "./MapView";
+import { MapView, type ScreenFile } from "./MapView";
+import { RowsView } from "./RowsView";
+import { RowsClient, type Row, type Command } from "./rows";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
 import { SuiteView, type SuiteReport } from "./SuiteView";
@@ -55,6 +57,12 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [recordingId, setRecordingId] = useState<string | null>(null);
     const [recordingPaused, setRecordingPaused] = useState(false);
     const [runPaused, setRunPaused] = useState(false);
+    const [mode, setMode] = useState<"rows" | "code">("rows");
+    const [rows, setRows] = useState<Row[]>([]);
+    const [screens, setScreens] = useState<ScreenFile[]>([]);
+    const [selectedRow, setSelectedRow] = useState<string | null>(null);
+    /** Set while a recording is being used to add a step at a given row. */
+    const [pointingAt, setPointingAt] = useState<{ before: string | null } | null>(null);
     const [busy, setBusy] = useState(false);
     const [captureOn, setCaptureOn] = useState(true);
     const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
@@ -80,6 +88,7 @@ export function makeDevicesPanel(host: TrawlHost) {
       [settings.agentPort, token],
     );
     const runs = useMemo(() => new RunController(host, agent), [agent]);
+    const rowsClient = useMemo(() => new RowsClient(agent), [agent]);
     const ready = Boolean(health?.authenticated) && devices.length > 0;
 
     const loadEverything = useCallback(async (): Promise<Health> => {
@@ -148,6 +157,30 @@ export function makeDevicesPanel(host: TrawlHost) {
     useEffect(() => {
       void loadEverything().catch(() => setHealth(null));
     }, [loadEverything]);
+
+    // The rows are a view of the code, which stays the single source of truth —
+    // so the code tab keeps working exactly as it did.
+    useEffect(() => {
+      if (mode === "code" || !health?.authenticated) return;
+      let cancelled = false;
+      void rowsClient
+        .rows(code)
+        .then((fresh) => !cancelled && setRows(fresh))
+        .catch(() => !cancelled && setRows([]));
+      return () => {
+        cancelled = true;
+      };
+    }, [code, mode, health?.authenticated, rowsClient]);
+
+    // The element pickers are the map; without it a row can only show the text
+    // it already has.
+    useEffect(() => {
+      if (!health?.authenticated) return;
+      void agent
+        .get<{ screens: ScreenFile[] }>("/map")
+        .then((map) => setScreens(map.screens))
+        .catch(() => setScreens([]));
+    }, [health?.authenticated, agent, recordingId]);
 
     const guard = async (work: () => Promise<void>): Promise<void> => {
       setBusy(true);
@@ -402,6 +435,38 @@ export function makeDevicesPanel(host: TrawlHost) {
         }
       });
 
+    /**
+     * Every visual edit goes through here: the agent rewrites the source by
+     * range and hands it back, so a row change is a text change and the code
+     * tab, the diff and undo all keep working.
+     */
+    const runCommand = (command: Command) =>
+      guard(async () => {
+        const result = await rowsClient.apply(code, command);
+        setCode(result.code);
+        editorRef.current?.replaceAll(result.code);
+        if (result.extracted) {
+          setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
+        }
+      });
+
+    /**
+     * The other way to add a step: point at it. A recording opens on the browser
+     * already on screen, and whatever is clicked lands at this row.
+     */
+    const pointAtStep = (before: string | null) =>
+      guard(async () => {
+        const live = await host.capture?.start();
+        const started = await agent.post<{ id: string; sessionId: string }>("/record/start", {
+          ...(sessionId ? { sessionId } : { deviceId }),
+          proxyPort: live?.port ?? settings.proxyPort,
+        });
+        setRecordingId(started.id);
+        setRecordingPaused(false);
+        setSessionId(started.sessionId);
+        setPointingAt({ before });
+      });
+
     /** Give up on the run. It stops at the next step, held or not. */
     const stopRun = () =>
       guard(async () => {
@@ -496,8 +561,36 @@ export function makeDevicesPanel(host: TrawlHost) {
           setRecordingId(null);
           setRecordingPaused(false);
           setContinuationLine(null);
+          setPointingAt(null);
           throw new Error("this recording is gone — the agent was restarted. Press Record to start a new one.");
         }
+
+        if (pointingAt) {
+          const pointed = await agent.post<{ steps: { action: string; args: unknown[] }[] }>(
+            `/record/${recordingId}/stop`,
+            {},
+          );
+          setRecordingId(null);
+          setRecordingPaused(false);
+          // Each recorded step lands before the same anchor, so they end up in
+          // the order they were performed, directly above it.
+          let next = code;
+          for (const step of pointed.steps.filter((s) => s.action !== "goto")) {
+            next = (
+              await rowsClient.apply(next, {
+                kind: "insert",
+                before: pointingAt.before,
+                action: step.action,
+                args: step.args,
+              })
+            ).code;
+          }
+          setCode(next);
+          editorRef.current?.replaceAll(next);
+          setPointingAt(null);
+          return;
+        }
+
         if (continuationLine !== null) {
           const result = await agent.post<{ code: string; warnings: string[] }>(
             `/record/${recordingId}/stop`,
@@ -874,8 +967,44 @@ export function makeDevicesPanel(host: TrawlHost) {
           onMouseLeave={() => (dragging.current = false)}
         >
           <div className="flex-1 min-w-0 flex flex-col">
+            <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
+              {(["rows", "code"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  title={
+                    m === "rows"
+                      ? "Edit the scenario as steps — no typing"
+                      : "The same scenario as the file it is"
+                  }
+                  className={`rounded px-2 py-0.5 ${mode === m ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {m}
+                </button>
+              ))}
+              {mode === "rows" && rows.some((r) => r.kind === "code") && (
+                <span className="ml-auto text-muted-foreground" title="Shown read-only and kept exactly as written">
+                  {rows.filter((r) => r.kind === "code").length} line(s) only the code tab can edit
+                </span>
+              )}
+            </div>
             <div className="flex-1 min-h-0">
-              <ScriptEditor value={code} onChange={setCode} language="javascript" apiRef={editorRef} />
+              {/* The editor stays mounted: it owns undo history and the
+                  highlight of a failed line, and both survive a mode switch. */}
+              <div className={mode === "code" ? "h-full" : "hidden"}>
+                <ScriptEditor value={code} onChange={setCode} language="javascript" apiRef={editorRef} />
+              </div>
+              {mode === "rows" && (
+                <RowsView
+                  host={host}
+                  rows={rows}
+                  screens={screens}
+                  onCommand={runCommand}
+                  onPoint={pointAtStep}
+                  selected={selectedRow}
+                  onSelect={setSelectedRow}
+                />
+              )}
             </div>
             <div className="border-t border-border px-2 py-1.5 text-xs flex flex-wrap gap-x-3 gap-y-1 items-center">
               <span className="text-muted-foreground">variables:</span>
