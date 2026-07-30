@@ -7,6 +7,7 @@ import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
 import { MapView, type ScreenFile } from "./MapView";
 import { RowsView } from "./RowsView";
+import { CanvasView } from "./CanvasView";
 import { RowsClient, anchorAfterLine, type Row, type Command } from "./rows";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
@@ -57,7 +58,7 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [recordingId, setRecordingId] = useState<string | null>(null);
     const [recordingPaused, setRecordingPaused] = useState(false);
     const [runPaused, setRunPaused] = useState(false);
-    const [mode, setMode] = useState<"rows" | "code">("rows");
+    const [mode, setMode] = useState<"rows" | "canvas" | "code">("rows");
     const [rows, setRows] = useState<Row[]>([]);
     const [screens, setScreens] = useState<ScreenFile[]>([]);
     const [selectedRow, setSelectedRow] = useState<string | null>(null);
@@ -985,7 +986,7 @@ export function makeDevicesPanel(host: TrawlHost) {
         >
           <div className="flex-1 min-w-0 flex flex-col">
             <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
-              {(["rows", "code"] as const).map((m) => (
+              {(["rows", "canvas", "code"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
@@ -1016,6 +1017,18 @@ export function makeDevicesPanel(host: TrawlHost) {
                   host={host}
                   rows={rows}
                   screens={screens}
+                  onCommand={runCommand}
+                  onPoint={pointAtStep}
+                  selected={selectedRow}
+                  onSelect={setSelectedRow}
+                />
+              )}
+              {mode === "canvas" && (
+                <CanvasView
+                  host={host}
+                  rows={rows}
+                  screens={screens}
+                  scripts={scripts}
                   onCommand={runCommand}
                   onPoint={pointAtStep}
                   selected={selectedRow}

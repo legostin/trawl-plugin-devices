@@ -26,7 +26,8 @@ export type Command =
   | { kind: "group"; ids: string[]; name: string }
   | { kind: "ungroup"; section: string }
   | { kind: "rename"; section: string; name: string }
-  | { kind: "extract"; section: string; path?: string };
+  | { kind: "extract"; section: string; path?: string }
+  | { kind: "moveSection"; section: string; before: string | null };
 
 /**
  * Where to insert so the new row lands *after* the given line: the anchor is the
