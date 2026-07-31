@@ -12,6 +12,13 @@ const TAKES_TARGET = new Set([
   "click", "fill", "select", "check", "uncheck", "hover", "expectVisible", "expectText",
 ]);
 
+/** How many elements in the whole map answer to this label. */
+const taken = (screens: ScreenFile[], label: string): number =>
+  screens.reduce(
+    (n, screen) => n + Object.values(screen.elements).filter((e) => e.label === label).length,
+    0,
+  );
+
 /**
  * One row, in both modes: the list renders these in sequence, and an expanded
  * canvas node renders the very same component. One editor, two arrangements.
@@ -47,17 +54,28 @@ export function RowLine({
     );
   }
 
-  const references = screens.flatMap((screen) =>
-    Object.values(screen.elements).map((entry) => ({
-      label: `${screen.label} › ${entry.label}`,
-      kind: entry.kind,
-    })),
-  );
+  // Grouped by screen rather than repeating it on every line: a screen named
+  // after a marketing headline is otherwise the whole width of every option,
+  // and the part that differs is the part pushed off the end.
+  const groups = screens
+    .map((screen) => ({
+      screen: screen.label,
+      items: Object.values(screen.elements).map((entry) => ({
+        // A name unique in the whole map resolves on its own; only a repeated
+        // one needs its screen, and that is what the recorder writes too.
+        value: taken(screens, entry.label) > 1 ? `${screen.label} › ${entry.label}` : entry.label,
+        label: entry.label,
+        kind: entry.kind,
+      })),
+    }))
+    .filter((g) => g.items.length > 0);
+
   const target = String(row.args[0]?.value ?? "");
+  const references = groups.flatMap((g) => g.items);
   // The map knows an element is a set of choices but not which choices: the
   // options live on the page. A wrong value fails with the real list, which is
   // a better answer than a dropdown built from a guess.
-  const isChoice = references.find((r) => r.label === target)?.kind === "choice";
+  const isChoice = references.find((r) => r.value === target)?.kind === "choice";
 
   return (
     <div
@@ -89,11 +107,15 @@ export function RowLine({
           onChange={(e) => onCommand({ kind: "setArg", id: row.id, index: 0, value: e.target.value })}
           style={{ width: 250 }}
         >
-          {!references.some((r) => r.label === target) && <option value={target}>{target || "—"}</option>}
-          {references.map((reference) => (
-            <option key={reference.label} value={reference.label}>
-              {reference.label}
-            </option>
+          {!references.some((r) => r.value === target) && <option value={target}>{target || "—"}</option>}
+          {groups.map((group) => (
+            <optgroup key={group.screen} label={group.screen}>
+              {group.items.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </Select>
       ) : (
