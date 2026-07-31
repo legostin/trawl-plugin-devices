@@ -34,6 +34,16 @@ export interface DevicesApi {
   suiteWrite(path: string, suite: Record<string, unknown>): Promise<unknown>;
   suiteRun(input: { path?: string; scripts?: string[]; deviceId: string; retries?: number }): Promise<unknown>;
   suiteStatus(suiteId: string): Promise<unknown>;
+  mapRead(): Promise<unknown>;
+  mapExplore(input: { sessionId: string; url?: string }): Promise<unknown>;
+  mapWrite(input: Record<string, unknown>): Promise<unknown>;
+  mapEdit(input: Record<string, unknown>): Promise<unknown>;
+  mapVerify(input: { sessionId: string; screenId?: string }): Promise<unknown>;
+  scenarioRows(code: string): Promise<unknown>;
+  scenarioApply(code: string, command: Record<string, unknown>): Promise<unknown>;
+  deleteScript(path: string, force?: boolean): Promise<unknown>;
+  recordPause(recordingId: string, paused: boolean): Promise<unknown>;
+  runPause(runId: string, paused: boolean): Promise<unknown>;
 }
 
 const DO_ACTIONS = ["click", "fill", "check", "uncheck", "select", "hover", "press", "goto", "screenshot"];
@@ -347,6 +357,148 @@ function specs(api: DevicesApi): McpToolSpec[] {
       },
       timeoutMs: 120_000,
       handler: (args) => api.heal(str(args, "runId")!, str(args, "deviceId")!),
+    },
+    {
+      name: "map_read",
+      description:
+        "The application map: screens, their url patterns, and the elements a scenario can name. Read it before writing a scenario — a step should name an element, not carry a locator.",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => api.mapRead(),
+    },
+    {
+      name: "map_explore",
+      description:
+        "Look at a screen in an open session and report what a map for it would contain: candidate elements with their roles and names, each marked when the map already has that name. Writes nothing — call map_write with the ones worth keeping. This is how a screen gets named as a whole rather than one element per click.",
+      inputSchema: {
+        type: "object",
+        properties: { sessionId: { type: "string" }, url: { type: "string", description: "navigate here first" } },
+        required: ["sessionId"],
+      },
+      timeoutMs: 60_000,
+      handler: (args) => api.mapExplore({ sessionId: str(args, "sessionId")!, url: str(args, "url", false) }),
+    },
+    {
+      name: "map_write",
+      description:
+        "Add or update elements on a screen. Entries land as proposed for a human to accept — a name nobody has read is a guess. Call map_read or map_explore first: an element already in the map must be updated, not duplicated.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          screen: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              label: { type: "string" },
+              match: { type: "object", properties: { url: { type: "string" }, hash: { type: "string" } } },
+              open: { type: "object", properties: { url: { type: "string" } } },
+            },
+            required: ["label"],
+          },
+          elements: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string" },
+                kind: { type: "string", enum: ["control", "choice"] },
+                target: { type: "object", description: "locator: { role, name } | { testId } | { css } …" },
+                option: { type: "object", description: "choice only: the shape of one option" },
+                api: { type: "array", items: { type: "string" } },
+              },
+              required: ["label", "target"],
+            },
+          },
+        },
+        required: ["screen", "elements"],
+      },
+      handler: (args) => api.mapWrite(obj(args)),
+    },
+    {
+      name: "map_edit",
+      description:
+        "Rename, accept, move or delete one entry — or a whole screen, including its url pattern and how to reach it. Renaming keeps the old name as an alias, so scenarios written against it keep working.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          screenId: { type: "string" },
+          elementKey: { type: "string" },
+          label: { type: "string" },
+          status: { type: "string", enum: ["proposed", "accepted"] },
+          moveTo: { type: "string", description: "element only: the screen it belongs to" },
+          match: { type: "object", properties: { url: { type: "string" }, hash: { type: "string" } } },
+          open: { type: "object", properties: { url: { type: "string" }, flow: { type: "string" } } },
+          remove: { type: "boolean" },
+        },
+        required: ["screenId"],
+      },
+      handler: (args) => api.mapEdit(obj(args)),
+    },
+    {
+      name: "map_verify",
+      description:
+        "Resolve a screen's entries against the page in front of the session: which still find exactly one element, which need their fallback, which find nothing. This is how you tell a map that is still true from one that only used to be.",
+      inputSchema: {
+        type: "object",
+        properties: { sessionId: { type: "string" }, screenId: { type: "string" } },
+        required: ["sessionId"],
+      },
+      timeoutMs: 60_000,
+      handler: (args) =>
+        api.mapVerify({ sessionId: str(args, "sessionId")!, screenId: str(args, "screenId", false) }),
+    },
+    {
+      name: "scenario_rows",
+      description:
+        "A scenario as editable rows: one per step, with its action, arguments, section and line. Anything not a flat step call comes back as a read-only code row. Use this instead of reading the file when you mean to change one step.",
+      inputSchema: { type: "object", properties: { code: { type: "string" } }, required: ["code"] },
+      handler: (args) => api.scenarioRows(str(args, "code")!),
+    },
+    {
+      name: "scenario_apply",
+      description:
+        "Apply one edit to a scenario and get the new source back. Commands: insert, remove, move, setAction, setArg, setDisabled, group, ungroup, rename, extract, moveSection. Editing by command rewrites only the characters that change, so the rest of the file — and its diff — stays as it was.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          code: { type: "string" },
+          command: { type: "object", description: "{ kind, … } — see the list in the description" },
+        },
+        required: ["code", "command"],
+      },
+      handler: (args) => api.scenarioApply(str(args, "code")!, obj(obj(args).command)),
+    },
+    {
+      name: "script_delete",
+      description:
+        "Delete a scenario. Refuses while another scenario calls it through run(), naming the callers; pass force to go ahead anyway.",
+      inputSchema: {
+        type: "object",
+        properties: { path: { type: "string" }, force: { type: "boolean" } },
+        required: ["path"],
+      },
+      handler: (args) => api.deleteScript(str(args, "path")!, obj(args).force === true),
+    },
+    {
+      name: "record_pause",
+      description:
+        "Stop taking clicks without ending the recording, or start taking them again. What happens while paused — a detour, a captcha — is not part of the scenario.",
+      inputSchema: {
+        type: "object",
+        properties: { recordingId: { type: "string" }, paused: { type: "boolean" } },
+        required: ["recordingId"],
+      },
+      handler: (args) => api.recordPause(str(args, "recordingId")!, obj(args).paused !== false),
+    },
+    {
+      name: "run_pause",
+      description:
+        "Hold a run between steps, or let it carry on. The browser stays exactly where the scenario left it, which is what makes it possible to look at the page or record the steps it turned out to need.",
+      inputSchema: {
+        type: "object",
+        properties: { runId: { type: "string" }, paused: { type: "boolean" } },
+        required: ["runId"],
+      },
+      handler: (args) => api.runPause(str(args, "runId")!, obj(args).paused !== false),
     },
     {
       name: "guide",

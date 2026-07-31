@@ -28,6 +28,16 @@ const api = (over: Partial<DevicesApi> = {}): DevicesApi => ({
   suiteWrite: async (path) => ({ path, scripts: 1 }),
   suiteRun: async () => ({ suiteId: "s_1" }),
   suiteStatus: async () => ({ status: "running", results: [] }),
+  mapRead: async () => ({ screens: [] }),
+  mapExplore: async () => ({ screen: { id: "s", label: "S" }, candidates: [] }),
+  mapWrite: async () => ({ created: ["Войти"], updated: [] }),
+  mapEdit: async () => ({ screen: { id: "s" } }),
+  mapVerify: async () => ({ screen: "S", entries: [] }),
+  scenarioRows: async () => ({ rows: [] }),
+  scenarioApply: async () => ({ code: "click('A')\n" }),
+  deleteScript: async (path) => ({ deleted: path }),
+  recordPause: async (_id, paused) => ({ paused }),
+  runPause: async (_id, paused) => ({ paused }),
   ...over,
 });
 
@@ -35,9 +45,12 @@ const byName = (name: string) => buildToolSpecs(api()).find((s) => s.name === na
 
 it("exposes exactly the planned tools, unprefixed", () => {
   expect(buildToolSpecs(api()).map((s) => s.name).sort()).toEqual([
-    "do", "guide", "heal", "list", "record_start", "record_status", "record_stop",
-    "run_cancel", "run_report", "run_start", "run_status", "runs_list",
-    "save", "script_read", "script_validate", "script_write", "scripts_list",
+    "do", "guide", "heal", "list",
+    "map_edit", "map_explore", "map_read", "map_verify", "map_write",
+    "record_pause", "record_start", "record_status", "record_stop",
+    "run_cancel", "run_pause", "run_report", "run_start", "run_status", "runs_list",
+    "save", "scenario_apply", "scenario_rows",
+    "script_delete", "script_read", "script_validate", "script_write", "scripts_list",
     "snapshot", "start", "status", "stop",
     "suite_read", "suite_run", "suite_status", "suite_write", "suites_list",
   ]);
