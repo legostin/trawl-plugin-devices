@@ -10,6 +10,8 @@ export interface ElementEntry {
   group?: Record<string, unknown>;
   option?: Record<string, unknown>;
   api?: string[];
+  /** A thumbnail of the element, relative to map/. */
+  shot?: string;
   source: "recorded" | "ai" | "human";
   status: "proposed" | "accepted";
   updatedAt: string;
@@ -48,6 +50,8 @@ export function MapView({
   const [showLocators, setShowLocators] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmScreen, setConfirmScreen] = useState<string | null>(null);
+  /** Thumbnails, fetched once each and kept as data urls. */
+  const [shots, setShots] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState("");
 
   const load = useCallback(async () => {
@@ -62,6 +66,22 @@ export function MapView({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A word cannot say which "Без названия" is which icon, so the picture is
+  // fetched for every entry that has one — small, and once each.
+  useEffect(() => {
+    if (!screens) return;
+    const wanted = screens
+      .flatMap((screen) => Object.values(screen.elements))
+      .map((entry) => entry.shot)
+      .filter((shot): shot is string => Boolean(shot) && !(shot! in shots));
+    for (const path of [...new Set(wanted)]) {
+      void agent
+        .get<{ png: string }>("/map/shot", { path })
+        .then(({ png }) => setShots((all) => ({ ...all, [path]: `data:image/png;base64,${png}` })))
+        .catch(() => {});
+    }
+  }, [screens, agent]);
 
   const edit = (body: Record<string, unknown>) =>
     agent
@@ -222,6 +242,15 @@ export function MapView({
                   >
                     {entry.status === "proposed" ? "⚠" : entry.kind === "choice" ? "≡" : "·"}
                   </span>
+
+                  {entry.shot && shots[entry.shot] && (
+                    <img
+                      src={shots[entry.shot]}
+                      alt=""
+                      title="Как элемент выглядел при записи"
+                      className="max-h-5 max-w-[120px] rounded border border-border object-contain bg-background"
+                    />
+                  )}
 
                   {editing === `e:${screen.id}:${key}` ? (
                     <input
