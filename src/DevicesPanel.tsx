@@ -7,6 +7,7 @@ import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
 import { MapView, type ScreenFile } from "./MapView";
 import { RowsView } from "./RowsView";
+import { RowsError } from "./RowsError";
 import { CanvasView } from "./CanvasView";
 import { RowsClient, anchorAfterLine, type Row, type Command } from "./rows";
 import { HistoryView } from "./HistoryView";
@@ -62,6 +63,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [runPaused, setRunPaused] = useState(false);
     const [mode, setMode] = useState<"rows" | "canvas" | "code">("rows");
     const [rows, setRows] = useState<Row[]>([]);
+    /** Why the rows are not there — never left to look like an empty scenario. */
+    const [rowsError, setRowsError] = useState<string | null>(null);
     const [screens, setScreens] = useState<ScreenFile[]>([]);
     const [selectedRow, setSelectedRow] = useState<string | null>(null);
     /** Set while a recording is being used to add a step at a given row. */
@@ -177,10 +180,21 @@ export function makeDevicesPanel(host: TrawlHost) {
     useEffect(() => {
       if (mode === "code" || !health?.authenticated) return;
       let cancelled = false;
-      void rowsClient
-        .rows(code)
-        .then((fresh) => !cancelled && setRows(fresh))
-        .catch(() => !cancelled && setRows([]));
+      void rowsClient.rows(code).then(
+        (fresh) => {
+          if (cancelled) return;
+          setRows(fresh);
+          setRowsError(null);
+        },
+        (err: Error) => {
+          if (cancelled) return;
+          // An empty list must never stand in for "this did not work": the
+          // scenario is right there in the code tab, and saying nothing about
+          // why it is not shown is the worst of the three answers.
+          setRows([]);
+          setRowsError(err.message);
+        },
+      );
       return () => {
         cancelled = true;
       };
@@ -1027,7 +1041,10 @@ export function makeDevicesPanel(host: TrawlHost) {
               <div className={mode === "code" ? "h-full" : "hidden"}>
                 <ScriptEditor value={code} onChange={setCode} language="javascript" apiRef={editorRef} />
               </div>
-              {mode === "rows" && (
+              {mode !== "code" && rowsError !== null && (
+                <RowsError host={host} message={rowsError} onRestartAgent={() => void restartAgent()} />
+              )}
+              {mode === "rows" && rowsError === null && (
                 <RowsView
                   host={host}
                   rows={rows}
@@ -1038,7 +1055,7 @@ export function makeDevicesPanel(host: TrawlHost) {
                   onSelect={setSelectedRow}
                 />
               )}
-              {mode === "canvas" && (
+              {mode === "canvas" && rowsError === null && (
                 <CanvasView
                   host={host}
                   rows={rows}
