@@ -28,6 +28,9 @@ export interface ScreenFile {
  * so this is where it gets fixed — one edit here is every scenario that walks
  * through the element.
  */
+/** A pattern that names no host claims the whole site — see the agent's isTooBroad. */
+const tooBroad = (pattern?: string): boolean => Boolean(pattern) && !/^[a-z]+:\/\//i.test(pattern!.trim());
+
 export function MapView({
   host,
   agent,
@@ -44,6 +47,7 @@ export function MapView({
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [showLocators, setShowLocators] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [confirmScreen, setConfirmScreen] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
 
   const load = useCallback(async () => {
@@ -135,16 +139,79 @@ export function MapView({
                   {screen.label}
                 </span>
               )}
-              <span className="text-muted-foreground truncate" title={screen.match?.url ?? ""}>
-                {screen.match?.url ?? ""}
-                {screen.match?.hash ? ` ${screen.match.hash}` : ""}
-              </span>
+              {editing === `m:${screen.id}` ? (
+                <input
+                  autoFocus
+                  className="bg-transparent border-b border-border outline-none flex-1 font-mono"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={() => setEditing(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      void edit({ screenId: screen.id, match: { url: draft } });
+                      setEditing(null);
+                    }
+                    if (e.key === "Escape") setEditing(null);
+                  }}
+                />
+              ) : (
+                <span
+                  className={`truncate cursor-text font-mono ${
+                    tooBroad(screen.match?.url) ? "text-amber-500" : "text-muted-foreground"
+                  }`}
+                  title={
+                    tooBroad(screen.match?.url)
+                      ? "Этот шаблон не привязан к хосту и забирает себе весь сайт. Нажмите, чтобы поправить."
+                      : "Нажмите, чтобы поправить"
+                  }
+                  onClick={() => {
+                    setEditing(`m:${screen.id}`);
+                    setDraft(screen.match?.url ?? "");
+                  }}
+                >
+                  {screen.match?.url ?? "—"}
+                  {screen.match?.hash ? ` ${screen.match.hash}` : ""}
+                </span>
+              )}
               {!screen.open?.url && !screen.open?.flow && (
                 <span className="text-amber-500 shrink-0" title="open('…') has nothing to navigate to">
                   no way in
                 </span>
               )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0"
+                title="Удалить экран вместе со всеми его элементами"
+                onClick={() => setConfirmScreen(screen.id)}
+              >
+                ✕
+              </Button>
             </div>
+
+            {confirmScreen === screen.id && (
+              <div className="flex items-center gap-2 px-2 py-1 border-t border-border bg-amber-500/10">
+                <span>
+                  Удалить «{screen.label}» и {Object.keys(screen.elements).length} элемент(ов)? Сценарии,
+                  которые на них ссылаются, перестанут находить эти имена.
+                </span>
+                <span className="ml-auto flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      void edit({ screenId: screen.id, remove: true });
+                      setConfirmScreen(null);
+                    }}
+                  >
+                    Удалить
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmScreen(null)}>
+                    Отмена
+                  </Button>
+                </span>
+              </div>
+            )}
 
             {expanded &&
               Object.entries(screen.elements).map(([key, entry]) => (
@@ -216,6 +283,26 @@ export function MapView({
                       >
                         accept
                       </Button>
+                    )}
+                    {screens.length > 1 && (
+                      <select
+                        className="bg-transparent border border-border rounded text-muted-foreground"
+                        value=""
+                        title="Перенести на другой экран"
+                        onChange={(e) =>
+                          e.target.value &&
+                          void edit({ screenId: screen.id, elementKey: key, moveTo: e.target.value })
+                        }
+                      >
+                        <option value="">→ экран</option>
+                        {screens
+                          .filter((other) => other.id !== screen.id)
+                          .map((other) => (
+                            <option key={other.id} value={other.id}>
+                              {other.label}
+                            </option>
+                          ))}
+                      </select>
                     )}
                     <Button
                       size="sm"
