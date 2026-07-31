@@ -29,6 +29,10 @@ interface Props {
   onPickFolder: () => void;
   onToken: (token: string) => void;
   tokenNeeded: boolean;
+  /** Where the agent is expected, so the wait says what it is waiting for. */
+  port: number;
+  /** Look for the agent right now, rather than waiting for the next poll. */
+  onRecheck: () => void;
 }
 
 /** First-run screen: one button, then a checklist of what the app is doing. */
@@ -44,6 +48,8 @@ export function SetupPanel({
   onPickFolder,
   onToken,
   tokenNeeded,
+  port,
+  onRecheck,
 }: Props) {
   const { Button, Input } = host.ui;
   const [showLog, setShowLog] = useState(false);
@@ -150,16 +156,30 @@ export function SetupPanel({
             This Trawl version cannot start the agent for you. Run it once in a terminal:
           </p>
           {commandBlock}
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="text-primary">◐</span>
+            Waiting for the agent on port {port} — this screen moves on by itself once it answers.
+            <Button size="sm" variant="ghost" className="ml-auto" disabled={busy} onClick={onRecheck}>
+              Check now
+            </Button>
+          </div>
+
           {tokenNeeded && (
-            <div className="flex gap-2 items-center mt-2">
-              <Input
-                value={token}
-                placeholder="paste the token the command printed"
-                onChange={(e) => setToken(e.target.value)}
-              />
-              <Button size="sm" onClick={() => onToken(token)}>
-                Save
-              </Button>
+            <div className="flex flex-col gap-1 mt-2">
+              <span className="text-xs text-muted-foreground">
+                The agent prints a token on its first line; paste it here so this panel may talk to it.
+              </span>
+              <div className="flex gap-2 items-center">
+                <Input
+                  value={token}
+                  placeholder="paste the token the command printed"
+                  onChange={(e) => setToken(e.target.value)}
+                />
+                <Button size="sm" onClick={() => onToken(token)}>
+                  Save
+                </Button>
+              </div>
             </div>
           )}
         </div>

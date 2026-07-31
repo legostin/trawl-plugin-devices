@@ -40,6 +40,8 @@ interface Device {
 
 const MAX_LOG = 400;
 const HEALTH_TIMEOUT_MS = 180_000;
+/** How often the setup screen looks for an agent that has appeared. */
+const AGENT_POLL_MS = 2_000;
 
 export function makeDevicesPanel(host: TrawlHost) {
   return function DevicesPanel() {
@@ -158,6 +160,17 @@ export function makeDevicesPanel(host: TrawlHost) {
     useEffect(() => {
       void loadEverything().catch(() => setHealth(null));
     }, [loadEverything]);
+
+    // While the setup screen is up, watch for an agent appearing. On a host that
+    // cannot spawn it, the only way in is to run the command by hand — and then
+    // sitting on a screen that never notices is the whole of the experience.
+    useEffect(() => {
+      if (ready) return;
+      const id = setInterval(() => {
+        void loadEverything().catch(() => {});
+      }, AGENT_POLL_MS);
+      return () => clearInterval(id);
+    }, [ready, loadEverything]);
 
     // The rows are a view of the code, which stays the single source of truth —
     // so the code tab keeps working exactly as it did.
@@ -727,6 +740,8 @@ export function makeDevicesPanel(host: TrawlHost) {
             })
           }
           tokenNeeded={!health?.authenticated}
+          port={settings.agentPort}
+          onRecheck={() => void loadEverything().catch(() => {})}
         />
       );
     }
