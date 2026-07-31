@@ -65,6 +65,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [rows, setRows] = useState<Row[]>([]);
     /** Why the rows are not there — never left to look like an empty scenario. */
     const [rowsError, setRowsError] = useState<string | null>(null);
+    /** A delete the agent refused because other scenarios call this one. */
+    const [deleteBlocked, setDeleteBlocked] = useState<{ path: string; message: string } | null>(null);
     const [screens, setScreens] = useState<ScreenFile[]>([]);
     const [selectedRow, setSelectedRow] = useState<string | null>(null);
     /** Set while a recording is being used to add a step at a given row. */
@@ -671,6 +673,37 @@ export function makeDevicesPanel(host: TrawlHost) {
         if (result.warnings.length) setError(result.warnings.join("; "));
       });
 
+    /**
+     * Delete the selected scenario. The agent refuses while another scenario
+     * calls it, because that one would then die on a missing file at run time,
+     * in a suite, at the worst moment — so the refusal is offered as a choice
+     * rather than swallowed.
+     */
+    const deleteScript = () =>
+      guard(async () => {
+        if (!selectedScript) return;
+        const remove = (force: boolean) =>
+          agent.post<{ deleted: string }>("/scripts/delete", { path: selectedScript, force });
+
+        try {
+          await remove(false);
+        } catch (err) {
+          const message = (err as Error).message;
+          if (!/вызывают/.test(message)) throw err;
+          // Asked here rather than through a modal: the answer needs the list of
+          // callers in front of it, and the host has no confirm dialog anyway.
+          setDeleteBlocked({ path: selectedScript, message });
+          return;
+        }
+
+        setDeleteBlocked(null);
+        setSelectedScript("");
+        setCode("");
+        setSavedCode("");
+        editorRef.current?.replaceAll("");
+        setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
+      });
+
     const saveScript = () =>
       guard(async () => {
         const path = scriptPath(scriptName) || selectedScript || `scripts/script-${scripts.length + 1}.js`;
@@ -814,6 +847,17 @@ export function makeDevicesPanel(host: TrawlHost) {
               </option>
             ))}
           </Select>
+          {selectedScript && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              title={`Delete ${selectedScript}`}
+              onClick={() => void deleteScript()}
+            >
+              ✕
+            </Button>
+          )}
           <Input
             value={scriptName}
             placeholder="name, e.g. login"
@@ -984,6 +1028,36 @@ export function makeDevicesPanel(host: TrawlHost) {
             {recordingPaused
               ? "Paused — clicks are being ignored. Do whatever you need, then press Resume; Stop finishes the recording."
               : "Recording — do things in the browser window. Pause ignores clicks without ending it; Stop finishes and writes the script."}
+          </div>
+        )}
+
+        {deleteBlocked && (
+          <div className="px-2 py-1.5 text-xs border-b border-border bg-amber-500/10 flex items-center gap-2">
+            <span className="text-amber-500">⚠</span>
+            <span>{deleteBlocked.message}</span>
+            <span className="ml-auto flex gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void guard(async () => {
+                    await agent.post("/scripts/delete", { path: deleteBlocked.path, force: true });
+                    setDeleteBlocked(null);
+                    setSelectedScript("");
+                    setCode("");
+                    setSavedCode("");
+                    editorRef.current?.replaceAll("");
+                    setScripts((await agent.get<{ scripts: string[] }>("/scripts")).scripts);
+                  })
+                }
+              >
+                Всё равно удалить
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDeleteBlocked(null)}>
+                Отмена
+              </Button>
+            </span>
           </div>
         )}
 
