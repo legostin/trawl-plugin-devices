@@ -46,6 +46,7 @@ export interface DevicesApi {
   runPause(runId: string, paused: boolean): Promise<unknown>;
   mapCoverage(): Promise<unknown>;
   mapDrift(input: { sessionId: string; screenId?: string; save?: boolean }): Promise<unknown>;
+  proposeScenario(input: { code: string; note?: string; suggestedPath?: string }): Promise<unknown>;
 }
 
 const DO_ACTIONS = ["click", "fill", "check", "uncheck", "select", "hover", "press", "goto", "screenshot"];
@@ -528,6 +529,26 @@ function specs(api: DevicesApi): McpToolSpec[] {
           sessionId: str(args, "sessionId")!,
           screenId: str(args, "screenId", false),
           save: obj(args).save === true,
+        }),
+    },
+    {
+      name: "scenario_propose",
+      description:
+        "Put a scenario in front of the person: it opens in the panel's editor, unsaved, with a note saying what it is. Use this instead of script_write for anything you wrote yourself — a file nobody has read is a file nobody trusts. Validates first and returns the parsed steps, so a broken draft never reaches the screen.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          code: { type: "string" },
+          note: { type: "string", description: "what was asked for, in the words it was asked in" },
+          suggestedPath: { type: "string", description: "e.g. scripts/podacha-bez-ceny.js" },
+        },
+        required: ["code"],
+      },
+      handler: (args) =>
+        api.proposeScenario({
+          code: str(args, "code")!,
+          note: str(args, "note", false),
+          suggestedPath: str(args, "suggestedPath", false),
         }),
     },
     {

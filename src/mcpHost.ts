@@ -1,4 +1,5 @@
 import type { DevicesApi } from "./mcp";
+import { proposeDraft } from "./draft";
 import type { AgentClient } from "./agent";
 import { summarise, type RunController, type RunReport } from "./run";
 
@@ -61,6 +62,19 @@ export function makeDevicesApi(agent: AgentClient, runs: RunController): Devices
     mapVerify: (input) => agent.post("/map/verify", input),
     mapCoverage: () => agent.get("/map/coverage"),
     mapDrift: (input) => agent.post("/map/drift", input),
+    proposeScenario: async (input) => {
+      // Validated before it reaches the screen: a draft that cannot parse is
+      // not a draft, it is a bug report about the agent that wrote it.
+      const validation = await agent.post<{ steps: unknown[]; errors: { message: string }[] }>(
+        "/scripts/validate",
+        { code: input.code },
+      );
+      if (validation.errors.length) {
+        throw new Error(`сценарий не разбирается: ${validation.errors.map((e) => e.message).join("; ")}`);
+      }
+      proposeDraft(input);
+      return { proposed: true, steps: validation.steps.length };
+    },
     scenarioRows: (code) => agent.post("/scripts/rows", { code }),
     scenarioApply: (code, command) => agent.post("/scripts/apply", { code, command }),
     deleteScript: (path, force) => agent.post("/scripts/delete", { path, force }),

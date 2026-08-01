@@ -40,6 +40,7 @@ const api = (over: Partial<DevicesApi> = {}): DevicesApi => ({
   runPause: async (_id, paused) => ({ paused }),
   mapCoverage: async () => ({ nodes: [], edges: [] }),
   mapDrift: async () => ({ screen: "S", appeared: [], gone: [], usedBy: [] }),
+  proposeScenario: async () => ({ proposed: true, steps: 2 }),
   ...over,
 });
 
@@ -51,7 +52,7 @@ it("exposes exactly the planned tools, unprefixed", () => {
     "map_coverage", "map_drift", "map_edit", "map_explore", "map_read", "map_verify", "map_write",
     "record_pause", "record_start", "record_status", "record_stop",
     "run_cancel", "run_pause", "run_report", "run_start", "run_status", "runs_list",
-    "save", "scenario_apply", "scenario_rows",
+    "save", "scenario_apply", "scenario_propose", "scenario_rows",
     "script_delete", "script_read", "script_validate", "script_write", "scripts_list",
     "snapshot", "start", "status", "stop",
     "suite_read", "suite_run", "suite_status", "suite_write", "suites_list",

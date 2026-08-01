@@ -11,6 +11,7 @@ import { RowsView } from "./RowsView";
 import { RowsError } from "./RowsError";
 import { CanvasView } from "./CanvasView";
 import { RowsClient, anchorAfterLine, type Row, type Command } from "./rows";
+import { consumeDraft, subscribeDraft, type Draft } from "./draft";
 import { HistoryView } from "./HistoryView";
 import { completionsFor } from "./completions";
 import { SuiteView, type SuiteReport } from "./SuiteView";
@@ -66,6 +67,8 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [rows, setRows] = useState<Row[]>([]);
     /** Why the rows are not there — never left to look like an empty scenario. */
     const [rowsError, setRowsError] = useState<string | null>(null);
+    /** A scenario an agent proposed, not yet saved by anyone. */
+    const [draft, setDraft] = useState<Draft | null>(null);
     /** A delete the agent refused because other scenarios call this one. */
     const [deleteBlocked, setDeleteBlocked] = useState<{ path: string; message: string } | null>(null);
     const [screens, setScreens] = useState<ScreenFile[]>([]);
@@ -130,9 +133,26 @@ export function makeDevicesPanel(host: TrawlHost) {
         tokenRef.current = stored;
         setTokenState(stored);
       })();
+      // A draft proposed while this panel was closed is waiting; one proposed
+      // while it is open arrives through the subscription.
+      const takeDraft = (proposed: Draft): void => {
+        setDraft(proposed);
+        setCode(proposed.code);
+        editorRef.current?.replaceAll(proposed.code);
+        setSelectedScript("");
+        setSavedCode("");
+        if (proposed.suggestedPath) {
+          setScriptName(proposed.suggestedPath.replace(/^scripts\//, "").replace(/\.js$/, ""));
+        }
+      };
+      const waiting = consumeDraft();
+      if (waiting) takeDraft(waiting);
+      const offDraft = subscribeDraft(takeDraft);
+
       const offStart = host.events.on("capture:started", () => setCaptureOn(true));
       const offStop = host.events.on("capture:stopped", () => setCaptureOn(false));
       return () => {
+        offDraft();
         offStart();
         offStop();
       };
@@ -1029,6 +1049,19 @@ export function makeDevicesPanel(host: TrawlHost) {
             {recordingPaused
               ? "Paused — clicks are being ignored. Do whatever you need, then press Resume; Stop finishes the recording."
               : "Recording — do things in the browser window. Pause ignores clicks without ending it; Stop finishes and writes the script."}
+          </div>
+        )}
+
+        {draft && (
+          <div className="px-2 py-1.5 text-xs border-b border-border bg-primary/10 flex items-center gap-2">
+            <span className="text-primary">✎</span>
+            <span>
+              Черновик от агента{draft.note ? `: ${draft.note}` : ""}. Ничего не сохранено — посмотрите и
+              нажмите Save, если годится.
+            </span>
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setDraft(null)}>
+              Понятно
+            </Button>
           </div>
         )}
 
