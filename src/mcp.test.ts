@@ -38,6 +38,8 @@ const api = (over: Partial<DevicesApi> = {}): DevicesApi => ({
   deleteScript: async (path) => ({ deleted: path }),
   recordPause: async (_id, paused) => ({ paused }),
   runPause: async (_id, paused) => ({ paused }),
+  mapCoverage: async () => ({ nodes: [], edges: [] }),
+  mapDrift: async () => ({ screen: "S", appeared: [], gone: [], usedBy: [] }),
   ...over,
 });
 
@@ -46,7 +48,7 @@ const byName = (name: string) => buildToolSpecs(api()).find((s) => s.name === na
 it("exposes exactly the planned tools, unprefixed", () => {
   expect(buildToolSpecs(api()).map((s) => s.name).sort()).toEqual([
     "do", "guide", "heal", "list",
-    "map_edit", "map_explore", "map_read", "map_verify", "map_write",
+    "map_coverage", "map_drift", "map_edit", "map_explore", "map_read", "map_verify", "map_write",
     "record_pause", "record_start", "record_status", "record_stop",
     "run_cancel", "run_pause", "run_report", "run_start", "run_status", "runs_list",
     "save", "scenario_apply", "scenario_rows",

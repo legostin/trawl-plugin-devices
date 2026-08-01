@@ -59,6 +59,8 @@ export function makeDevicesApi(agent: AgentClient, runs: RunController): Devices
     mapWrite: (input) => agent.post("/map/write", input),
     mapEdit: (input) => agent.post("/map/edit", input),
     mapVerify: (input) => agent.post("/map/verify", input),
+    mapCoverage: () => agent.get("/map/coverage"),
+    mapDrift: (input) => agent.post("/map/drift", input),
     scenarioRows: (code) => agent.post("/scripts/rows", { code }),
     scenarioApply: (code, command) => agent.post("/scripts/apply", { code, command }),
     deleteScript: (path, force) => agent.post("/scripts/delete", { path, force }),

@@ -44,6 +44,8 @@ export interface DevicesApi {
   deleteScript(path: string, force?: boolean): Promise<unknown>;
   recordPause(recordingId: string, paused: boolean): Promise<unknown>;
   runPause(runId: string, paused: boolean): Promise<unknown>;
+  mapCoverage(): Promise<unknown>;
+  mapDrift(input: { sessionId: string; screenId?: string; save?: boolean }): Promise<unknown>;
 }
 
 const DO_ACTIONS = ["click", "fill", "check", "uncheck", "select", "hover", "press", "goto", "screenshot"];
@@ -499,6 +501,34 @@ function specs(api: DevicesApi): McpToolSpec[] {
         required: ["runId"],
       },
       handler: (args) => api.runPause(str(args, "runId")!, obj(args).paused !== false),
+    },
+    {
+      name: "map_coverage",
+      description:
+        "Screens as nodes and the moves between them as edges, built from the runs that happened. Says which screens no scenario reaches and which transitions rest on a single scenario — the gaps a suite cannot report about itself.",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => api.mapCoverage(),
+    },
+    {
+      name: "map_drift",
+      description:
+        "Compare the screen in front of a session against what the map last saw there: what appeared, what went, and which scenarios walk through it. Pass save to take the page as the new baseline instead. A required field that appeared is the change that quietly breaks a dozen scenarios.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          screenId: { type: "string" },
+          save: { type: "boolean", description: "record this page as the baseline" },
+        },
+        required: ["sessionId"],
+      },
+      timeoutMs: 60_000,
+      handler: (args) =>
+        api.mapDrift({
+          sessionId: str(args, "sessionId")!,
+          screenId: str(args, "screenId", false),
+          save: obj(args).save === true,
+        }),
     },
     {
       name: "guide",

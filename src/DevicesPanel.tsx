@@ -6,6 +6,7 @@ import { loadSettings, loadToken, saveSettings, saveToken, DEFAULT_SETTINGS, typ
 import { RunReportView } from "./RunReportView";
 import { GuideView } from "./GuideView";
 import { MapView, type ScreenFile } from "./MapView";
+import { CoverageView } from "./CoverageView";
 import { RowsView } from "./RowsView";
 import { RowsError } from "./RowsError";
 import { CanvasView } from "./CanvasView";
@@ -77,7 +78,7 @@ export function makeDevicesPanel(host: TrawlHost) {
     const [log, setLog] = useState<string[]>([]);
     const [newDevice, setNewDevice] = useState<string | null>(null);
     const [scriptName, setScriptName] = useState("");
-    const [pane, setPane] = useState<"report" | "map" | "suite" | "history" | "guide">("report");
+    const [pane, setPane] = useState<"report" | "map" | "coverage" | "suite" | "history" | "guide">("report");
     const [suites, setSuites] = useState<string[]>([]);
     const [selectedSuite, setSelectedSuite] = useState("");
     const [openSessions, setOpenSessions] = useState<{ sessionId: string; currentUrl: string | null }[]>([]);
@@ -1188,7 +1189,7 @@ export function makeDevicesPanel(host: TrawlHost) {
           />
           <div style={{ width: `${reportWidth}%` }} className="min-w-0 flex flex-col">
             <div className="flex gap-1 border-b border-border px-2 py-1 text-xs">
-              {(["report", "map", "suite", "history", "guide"] as const).map((tab) => (
+              {(["report", "map", "coverage", "suite", "history", "guide"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setPane(tab)}
@@ -1246,6 +1247,7 @@ export function makeDevicesPanel(host: TrawlHost) {
                   }}
                 />
               )}
+              {pane === "coverage" && <CoverageView host={host} agent={agent} />}
               {pane === "guide" && <GuideView host={host} agent={agent} />}
             </div>
           </div>
