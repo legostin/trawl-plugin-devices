@@ -19,6 +19,8 @@ export interface ElementEntry {
 
 export interface ScreenFile {
   id: string;
+  /** The application this screen belongs to. */
+  domain?: string;
   label: string;
   match: { url?: string; hash?: string } | null;
   open?: { url?: string; flow?: string };
@@ -99,6 +101,15 @@ export function MapView({
     );
   }
 
+  // Grouped by application: two products in one workspace are two maps that
+  // happen to share a folder, and reading them as one list is confusing.
+  const byDomain = [...
+    screens.reduce((groups, screen) => {
+      const key = screen.domain ?? "—";
+      return groups.set(key, [...(groups.get(key) ?? []), screen]);
+    }, new Map<string, ScreenFile[]>())
+  ].sort(([a], [b]) => a.localeCompare(b));
+
   const proposed = screens.reduce(
     (n, s) => n + Object.values(s.elements).filter((e) => e.status === "proposed").length,
     0,
@@ -120,7 +131,12 @@ export function MapView({
         </Button>
       </div>
 
-      {screens.map((screen) => {
+      {byDomain.map(([domain, group]) => (
+        <div key={domain} className="flex flex-col gap-2">
+          {byDomain.length > 1 && (
+            <div className="text-muted-foreground font-medium sticky top-0 bg-background py-1">{domain}</div>
+          )}
+          {group.map((screen) => {
         const expanded = open[screen.id] ?? true;
         return (
           <div key={screen.id} className="border border-border rounded">
@@ -345,8 +361,10 @@ export function MapView({
                 </div>
               ))}
           </div>
-        );
-      })}
+          );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
