@@ -16,7 +16,7 @@ export const INITIAL_STEPS: Step[] = [
   { id: "browser", label: "Install the browser", status: "pending" },
   { id: "token", label: "Connect to the agent", status: "pending" },
   { id: "device", label: "Create a device", status: "pending" },
-  { id: "record", label: "Open the browser and record", status: "pending" },
+  { id: "record", label: "Open the browser", status: "pending" },
 ];
 
 export const setStep = (steps: Step[], id: StepId, status: StepStatus, detail?: string): Step[] =>

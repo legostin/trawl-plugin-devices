@@ -414,20 +414,20 @@ export function makeDevicesPanel(host: TrawlHost) {
           await loadEverything();
           setDeviceId(device.id);
 
-          // Straight into recording: a headed browser opens through the proxy
-          // with the recorder overlay, so the next click is already captured.
+          // A browser, not a recording. Setting up is not the same as deciding
+          // to record, and a recorder that starts itself catches whatever the
+          // person happened to do while getting their bearings.
           setSteps((s) => setStep(s, "record", "running"));
-          const rec = await probe.post<{ id: string; sessionId: string }>("/record/start", {
+          const opened = await probe.post<{ session: { sessionId: string } }>("/sessions", {
             deviceId: device.id,
             proxyPort,
+            headless: false,
           });
-          setRecordingId(rec.id);
-          setRecordingPaused(false);
           // The browser that just opened is the one to keep working in — list it
           // and select it, or the picker still says "new browser".
-          setSessionId(rec.sessionId);
+          setSessionId(opened.session.sessionId);
           await loadEverything();
-          setSteps((s) => setStep(s, "record", "done", "browser open — click away, then Stop recording"));
+          setSteps((s) => setStep(s, "record", "done", "browser open — press Record when you are ready"));
         } catch (err) {
           setSteps((s) => setStep(s, "token", "failed", (err as Error).message));
           throw err;
@@ -873,10 +873,11 @@ export function makeDevicesPanel(host: TrawlHost) {
               size="sm"
               variant="ghost"
               disabled={busy}
-              title={`Delete ${selectedScript}`}
+              className="border border-border"
+              title={`Удалить ${selectedScript}`}
               onClick={() => void deleteScript()}
             >
-              ✕
+              Delete
             </Button>
           )}
           <Input

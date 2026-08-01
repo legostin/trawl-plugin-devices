@@ -52,6 +52,8 @@ export function MapView({
   const [showLocators, setShowLocators] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmScreen, setConfirmScreen] = useState<string | null>(null);
+  /** A delete the agent refused because scenarios name this entry. */
+  const [blocked, setBlocked] = useState<{ body: Record<string, unknown>; message: string } | null>(null);
   /** Thumbnails, fetched once each and kept as data urls. */
   const [shots, setShots] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState("");
@@ -88,8 +90,17 @@ export function MapView({
   const edit = (body: Record<string, unknown>) =>
     agent
       .post("/map/edit", body)
-      .then(load)
-      .catch((err: Error) => setError(err.message));
+      .then(() => {
+        setBlocked(null);
+        return load();
+      })
+      .catch((err: Error) => {
+        // Scenarios naming this entry would start failing on resolution — at
+        // run time, saying only that a name is not in the map. Offered as a
+        // choice, with the list, rather than swallowed.
+        if (/ссылаются/.test(err.message)) setBlocked({ body, message: err.message });
+        else setError(err.message);
+      });
 
   if (error) return <div className="p-3 text-destructive text-xs">{error}</div>;
   if (!screens) return <div className="p-3 text-muted-foreground text-sm">Loading…</div>;
@@ -130,6 +141,20 @@ export function MapView({
           Refresh
         </Button>
       </div>
+
+      {blocked && (
+        <div className="flex items-center gap-2 rounded border border-amber-500/60 bg-amber-500/10 px-2 py-1">
+          <span>{blocked.message}</span>
+          <span className="ml-auto flex gap-1 shrink-0">
+            <Button size="sm" variant="ghost" onClick={() => void edit({ ...blocked.body, force: true })}>
+              Всё равно удалить
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setBlocked(null)}>
+              Отмена
+            </Button>
+          </span>
+        </div>
+      )}
 
       {byDomain.map(([domain, group]) => (
         <div key={domain} className="flex flex-col gap-2">
